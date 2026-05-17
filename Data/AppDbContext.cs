@@ -29,6 +29,7 @@ namespace InventoryAPI.Data
 
         // 3. Usuarios y Personal
         public DbSet<User> Users { get; set; }
+        public DbSet<Role> Roles { get; set; }
         public DbSet<Employee> Employees { get; set; }
         public DbSet<Customer> Customers { get; set; }
         public DbSet<Profile> Profiles { get; set; }
