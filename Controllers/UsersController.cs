@@ -1,14 +1,8 @@
 ﻿using InventoryAPI.Data;
 using InventoryAPI.Models;
 using InventoryAPI.Models.DTO;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 
 namespace InventoryAPI.Controllers
 {
@@ -41,7 +35,6 @@ namespace InventoryAPI.Controllers
                     PhoneNumber = u.PhoneNumber,
                     ProfilePictureUrl = u.ProfilePictureUrl,
                     IsActive = u.IsActive,
-                    // Mapeos seguros controlando nulos
                     RoleName = u.Role != null ? u.Role.Name : "Usuario",
                     JobPositionId = u.JobPositionId,
                     AreaId = u.AreaId,
@@ -85,30 +78,52 @@ namespace InventoryAPI.Controllers
         }
 
         // PUT: api/Users/5
+        // ACTUALIZADO CON TODOS LOS CAMPOS DEL SÚPER ADMINISTRADOR
         [HttpPut("{id}")]
         public async Task<IActionResult> PutUser(int id, [FromBody] UserDTO userDto)
         {
-            // 1. Verificamos que el ID de la URL coincida con el del cuerpo (body)
             if (id != userDto.Id)
             {
                 return BadRequest(new { mensaje = "El ID de la ruta no coincide con el usuario." });
             }
 
-            // 2. Buscamos al usuario REAL en la base de datos
-            var userDb = await _context.Users.FindAsync(id);
+            // Buscamos al usuario e incluimos su Rol para poder manipularlo
+            var userDb = await _context.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == id);
 
             if (userDb == null)
             {
                 return NotFound(new { mensaje = "El usuario no existe." });
             }
 
-            // 3. ACTUALIZAMOS SOLAMENTE LOS CAMPOS PERMITIDOS
+            // 1. Actualización de Campos de Texto y Estado
             userDb.FirstName = userDto.FirstName;
             userDb.LastName = userDto.LastName;
+            userDb.Email = userDto.Email;
+            userDb.Username = userDto.Username;
             userDb.PhoneNumber = userDto.PhoneNumber;
-
-            // Si en el futuro agregas la edición de foto desde la app, descomentas esta línea:
             userDb.ProfilePictureUrl = userDto.ProfilePictureUrl;
+            userDb.IsActive = userDto.IsActive;
+
+            // 2. Actualización de los Ids de los Parámetros (Pickers de MAUI)
+            userDb.AreaId = userDto.AreaId;
+            userDb.JobPositionId = userDto.JobPositionId;
+            userDb.ContractTypeId = userDto.ContractTypeId;
+
+            // 3. Traducción de Nombre de Rol a RolId numérico
+            if (!string.IsNullOrWhiteSpace(userDto.RoleName))
+            {
+                var roleObj = await _context.Roles.FirstOrDefaultAsync(r => r.Name == userDto.RoleName);
+                if (roleObj != null)
+                {
+                    userDb.RoleId = roleObj.Id;
+                }
+            }
+
+            // 4. Actualización Opcional de Contraseña (Texto Plano acorde a tu Login)
+            if (!string.IsNullOrWhiteSpace(userDto.Password))
+            {
+                userDb.Password = userDto.Password;
+            }
 
             try
             {
@@ -130,7 +145,6 @@ namespace InventoryAPI.Controllers
         }
 
         // POST: api/Users
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
         public async Task<ActionResult<User>> PostUser(User user)
         {
@@ -174,23 +188,18 @@ namespace InventoryAPI.Controllers
                     PhoneNumber = u.PhoneNumber,
                     ProfilePictureUrl = u.ProfilePictureUrl,
                     IsActive = u.IsActive,
-
                     RoleName = u.Role != null ? u.Role.Name : "Usuario",
-
                     JobPositionId = u.JobPositionId,
                     AreaId = u.AreaId,
                     ContractTypeId = u.ContractTypeId
                 })
                 .FirstOrDefaultAsync();
 
-            // 2. Si es null, significa que las credenciales no coincidieron
             if (userDto == null)
             {
-                // Devolvemos un código HTTP 401 (No Autorizado)
                 return Unauthorized(new { mensaje = "Usuario o contraseña incorrectos" });
             }
 
-            // 3. Si todo está correcto, devolvemos HTTP 200 (OK) con todos los datos del perfil
             return Ok(userDto);
         }
 
@@ -202,28 +211,22 @@ namespace InventoryAPI.Controllers
         [HttpPost("UploadPhoto")]
         public async Task<IActionResult> UploadPhoto(IFormFile file)
         {
-            // Validamos que venga un archivo
             if (file == null || file.Length == 0)
                 return BadRequest(new { mensaje = "No se recibió ninguna imagen." });
 
-            // Creamos la ruta física donde se guardará (wwwroot/images/profiles)
             var folderPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "images", "profiles");
 
-            // Si la carpeta no existe, la creamos
             if (!Directory.Exists(folderPath))
                 Directory.CreateDirectory(folderPath);
 
-            // Generamos un nombre único para que no se sobreescriban fotos con el mismo nombre
             var fileName = $"{Guid.NewGuid()}_{file.FileName}";
             var filePath = Path.Combine(folderPath, fileName);
 
-            // Guardamos el archivo físicamente en el servidor
             using (var stream = new FileStream(filePath, FileMode.Create))
             {
                 await file.CopyToAsync(stream);
             }
 
-            // OJO: Cambia esta URL base por la de tu servidor real en Somee
             var fileUrl = $"http://db-inventario-api.somee.com/images/profiles/{fileName}";
 
             return Ok(new { Url = fileUrl });
