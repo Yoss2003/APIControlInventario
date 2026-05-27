@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using InventoryAPI.Data;
-using InventoryAPI.Models;
+using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
@@ -23,14 +23,14 @@ namespace InventoryAPI.Controllers
 
         // GET: api/Parameters
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Parameter>>> GetParameters()
+        public async Task<ActionResult<IEnumerable<Parameters>>> GetParameters()
         {
             return await _context.Parameters.ToListAsync();
         }
 
         // GET: api/Parameters/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Parameter>> GetParameter(int id)
+        public async Task<ActionResult<Parameters>> GetParameter(int id)
         {
             var parameter = await _context.Parameters.FindAsync(id);
 
@@ -45,7 +45,7 @@ namespace InventoryAPI.Controllers
         // PUT: api/Parameters/5
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutParameter(int id, Parameter parameter)
+        public async Task<IActionResult> PutParameter(int id, Parameters parameter)
         {
             if (id != parameter.Id)
             {
@@ -76,7 +76,7 @@ namespace InventoryAPI.Controllers
         // POST: api/Parameters
         // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Parameter>> PostParameter(Parameter parameter)
+        public async Task<ActionResult<Parameters>> PostParameter(Parameters parameter)
         {
             _context.Parameters.Add(parameter);
             await _context.SaveChangesAsync();

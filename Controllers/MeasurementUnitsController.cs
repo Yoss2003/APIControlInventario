@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using InventoryAPI.Data;
-using InventoryAPI.Models;
+using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {

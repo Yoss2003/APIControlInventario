@@ -1,5 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Models;
+using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Data
 {
@@ -9,7 +9,7 @@ namespace InventoryAPI.Data
 
         // 1. Core e Inventario
         public DbSet<Inventory> Inventories { get; set; }
-        public DbSet<Parameter> Parameters { get; set; }
+        public DbSet<Parameters> Parameters { get; set; }
         public DbSet<Category> Categories { get; set; }
         public DbSet<Brand> Brands { get; set; }
         public DbSet<Article> Articles { get; set; }

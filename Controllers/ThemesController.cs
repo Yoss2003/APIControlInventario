@@ -1,12 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
+﻿using ControlInventario.Shared.Models;
+using InventoryAPI.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
-using InventoryAPI.Models;
 
 namespace InventoryAPI.Controllers
 {
