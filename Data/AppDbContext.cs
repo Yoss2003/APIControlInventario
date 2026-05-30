@@ -13,7 +13,6 @@ namespace InventoryAPI.Data
         public DbSet<Category> Categories { get; set; }
         public DbSet<Brand> Brands { get; set; }
         public DbSet<Article> Articles { get; set; }
-        public DbSet<RegistrationGroup> RegistrationGroups { get; set; }
         public DbSet<Supplier> Suppliers { get; set; }
 
         // 2. Configuración y Catálogos (Tablas Maestras)
