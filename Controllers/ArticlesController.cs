@@ -43,7 +43,6 @@ namespace InventoryAPI.Controllers
         }
 
         // PUT: api/Articles/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
         public async Task<IActionResult> PutArticle(int id, Article article)
         {
@@ -74,14 +73,20 @@ namespace InventoryAPI.Controllers
         }
 
         // POST: api/Articles
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
         public async Task<ActionResult<Article>> PostArticle(Article article)
         {
-            _context.Articles.Add(article);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction("GetArticle", new { id = article.Id }, article);
+            try
+            {
+                _context.Articles.Add(article);
+                await _context.SaveChangesAsync();
+                return CreatedAtAction("GetArticle", new { id = article.Id }, article);
+            }
+            catch (Exception ex)
+            {
+                var innerMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return StatusCode(500, new { error = "Error en Base de Datos", detalle = innerMessage });
+            }
         }
 
         // DELETE: api/Articles/5
@@ -98,6 +103,52 @@ namespace InventoryAPI.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        // ====================================================================
+        // 🌟 NUEVO ENDPOINT 1: SUMA DEL STOCK TOTAL POR INVENTARIO
+        // ====================================================================
+        [HttpGet("count/inventory/{inventoryId}")]
+        public async Task<IActionResult> GetArticleCount(int inventoryId)
+        {
+            try
+            {
+                // ✔️ CAMBIO CLAVE: Usamos 'decimal' en lugar de 'double' para hacer match perfecto
+                decimal stockTotal = await _context.Articles
+                    .Where(a => a.InventoryId == inventoryId)
+                    .SumAsync(a => a.Stock);
+
+                // Convertimos a entero para renderizar números limpios en el Dashboard del celular
+                int totalUnidades = (int)stockTotal;
+
+                return Ok(totalUnidades);
+            }
+            catch (Exception)
+            {
+                return Ok(0); // Resguardo por si la tabla está vacía
+            }
+        }
+
+        // ====================================================================
+        // 🌟 NUEVO ENDPOINT 2: BÚSQUEDA POR CÓDIGO DE BARRAS (Para la Cámara)
+        // ====================================================================
+        [HttpGet("barcode/{barcode}")]
+        public async Task<IActionResult> GetArticleByBarcode(string barcode)
+        {
+            if (string.IsNullOrWhiteSpace(barcode))
+            {
+                return BadRequest(new { error = "El código de barras no puede estar vacío." });
+            }
+
+            var articulo = await _context.Articles
+                .FirstOrDefaultAsync(a => a.Barcode == barcode);
+
+            if (articulo == null)
+            {
+                return NotFound(new { error = $"El código {barcode} no está registrado." });
+            }
+
+            return Ok(articulo);
         }
 
         private bool ArticleExists(int id)

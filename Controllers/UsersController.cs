@@ -110,7 +110,11 @@ namespace InventoryAPI.Controllers
             userDb.ContractTypeId = userDto.ContractTypeId;
 
             // 3. Traducción de Nombre de Rol a RolId numérico
-            if (!string.IsNullOrWhiteSpace(userDto.RoleName))
+            if (userDto.RoleId > 0)
+            {
+                userDb.RoleId = userDto.RoleId;
+            }
+            else if (!string.IsNullOrWhiteSpace(userDto.RoleName))
             {
                 var roleObj = await _context.Roles.FirstOrDefaultAsync(r => r.Name == userDto.RoleName);
                 if (roleObj != null)
@@ -171,36 +175,19 @@ namespace InventoryAPI.Controllers
         }
 
         [HttpPost("Login")]
-        public async Task<ActionResult<UserDTO>> Login([FromBody] LoginRequestDTO request)
+        public async Task<ActionResult<User>> Login([FromBody] LoginRequestDTO request)
         {
-            var userDto = await _context.Users
-                .Where(u => u.Username == request.Username && u.Password == request.Password)
-                .Select(u => new UserDTO
-                {
-                    Id = u.Id,
-                    FirstName = u.FirstName,
-                    LastName = u.LastName,
-                    Email = u.Email,
-                    Username = u.Username,
-                    Age = u.Age,
-                    BirthDate = u.BirthDate,
-                    HireDate = u.HireDate,
-                    PhoneNumber = u.PhoneNumber,
-                    ProfilePictureUrl = u.ProfilePictureUrl,
-                    IsActive = u.IsActive,
-                    RoleName = u.Role != null ? u.Role.Name : "Usuario",
-                    JobPositionId = u.JobPositionId,
-                    AreaId = u.AreaId,
-                    ContractTypeId = u.ContractTypeId
-                })
-                .FirstOrDefaultAsync();
+            // Buscamos al usuario incluyendo su Rol completo de la base de datos
+            var user = await _context.Users
+                .Include(u => u.Role)
+                .FirstOrDefaultAsync(u => u.Username == request.Username && u.Password == request.Password);
 
-            if (userDto == null)
+            if (user == null)
             {
                 return Unauthorized(new { mensaje = "Usuario o contraseña incorrectos" });
             }
 
-            return Ok(userDto);
+            return Ok(user);
         }
 
         private bool UserExists(int id)
