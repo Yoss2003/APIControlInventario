@@ -1,0 +1,36 @@
+name: Deploy API to Somee
+
+# 1. ¿Cuándo se dispara la automatización?
+on:
+  push:
+    branches:
+      - main # Cambia a 'master' si tu rama principal se llama así
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest # GitHub nos presta una máquina Linux gratis
+
+    steps:
+    # 2. Descargar el código fuente a la máquina virtual
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+
+    # 3. Instalar .NET 10 (Que es la versión que usas en tu API)
+    - name: ⚙️ Setup .NET 10
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    # 4. Restaurar paquetes, compilar y preparar los archivos para producción
+    - name: 🛠️ Build and Publish
+      # OJO AQUÍ: Asegúrate de que la ruta apunte correctamente a tu InventoryAPI.csproj
+      run: dotnet publish ./APIControlInventario/InventoryAPI.csproj -c Release -o ./publish_output
+
+    # 5. Conectarse a Somee por FTP y subir los archivos
+    - name: 🚀 FTP Deploy to Somee
+      uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      with:
+        server: ${{ secrets.FTP_SERVER }}
+        username: ${{ secrets.FTP_USERNAME }}
+        password: ${{ secrets.FTP_PASSWORD }}
+        local-dir: ./publish_output/
