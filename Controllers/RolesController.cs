@@ -25,7 +25,10 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Role>>> GetRoles()
         {
-            return await _context.Roles.ToListAsync();
+            return await _context.Roles
+                .Include(r => r.RolePermissions!)
+                    .ThenInclude(rp => rp.Permission)
+                .ToListAsync();
         }
 
         // GET: api/Roles/5
@@ -98,6 +101,31 @@ namespace InventoryAPI.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        // POST: api/Roles/5/permissions
+        [HttpPost("{id}/permissions")]
+        public async Task<IActionResult> UpdateRolePermissions(int id, [FromBody] List<int> permissionIds)
+        {
+            // 1. Validamos que el rol exista
+            var role = await _context.Roles.FindAsync(id);
+            if (role == null) return NotFound();
+
+            // 2. Borramos los permisos actuales de este rol en la tabla intermedia
+            var existingPermissions = _context.RolePermissions.Where(rp => rp.RoleId == id);
+            _context.RolePermissions.RemoveRange(existingPermissions);
+
+            // 3. Insertamos los nuevos permisos que vienen desde la app móvil
+            var newRolePermissions = permissionIds.Select(pid => new RolePermission
+            {
+                RoleId = id,
+                PermissionId = pid
+            });
+
+            _context.RolePermissions.AddRange(newRolePermissions);
+            await _context.SaveChangesAsync();
+
+            return Ok();
         }
 
         private bool RoleExists(int id)
