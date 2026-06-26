@@ -3,6 +3,7 @@ using InventoryAPI.Data;
 using InventoryAPI.Models.DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using OtpNet;
 
 namespace InventoryAPI.Controllers
 {
@@ -27,18 +28,18 @@ namespace InventoryAPI.Controllers
                     Id = u.Id,
                     FirstName = u.FirstName,
                     LastName = u.LastName,
-                    Email = u.Email,
+                    Email = u.Email ?? "",
                     Username = u.Username,
-                    Age = u.Age,
-                    BirthDate = u.BirthDate,
-                    HireDate = u.HireDate,
-                    PhoneNumber = u.PhoneNumber,
-                    ProfilePictureUrl = u.ProfilePictureUrl,
+                    Age = u.Age ?? 0,
+                    BirthDate = u.BirthDate ?? "",
+                    HireDate = u.HireDate ?? "",
+                    PhoneNumber = u.PhoneNumber ?? "",
+                    ProfilePictureUrl = u.ProfilePictureUrl ?? "",
                     IsActive = u.IsActive,
                     RoleName = u.Role != null ? u.Role.Name : "Usuario",
-                    JobPositionId = u.JobPositionId,
-                    AreaId = u.AreaId,
-                    ContractTypeId = u.ContractTypeId
+                    JobPositionId = u.JobPositionId ?? 0,
+                    AreaId = u.AreaId ?? 0,
+                    ContractTypeId = u.ContractTypeId ?? 0
                 })
                 .ToListAsync();
         }
@@ -54,18 +55,18 @@ namespace InventoryAPI.Controllers
                     Id = u.Id,
                     FirstName = u.FirstName,
                     LastName = u.LastName,
-                    Email = u.Email,
+                    Email = u.Email ?? "",
                     Username = u.Username,
-                    Age = u.Age,
-                    BirthDate = u.BirthDate,
-                    HireDate = u.HireDate,
-                    PhoneNumber = u.PhoneNumber,
-                    ProfilePictureUrl = u.ProfilePictureUrl,
+                    Age = u.Age ?? 0,
+                    BirthDate = u.BirthDate ?? "",
+                    HireDate = u.HireDate ?? "",
+                    PhoneNumber = u.PhoneNumber ?? "",
+                    ProfilePictureUrl = u.ProfilePictureUrl ?? "",
                     IsActive = u.IsActive,
                     RoleName = u.Role != null ? u.Role.Name : "Usuario",
-                    JobPositionId = u.JobPositionId,
-                    AreaId = u.AreaId,
-                    ContractTypeId = u.ContractTypeId
+                    JobPositionId = u.JobPositionId ?? 0,
+                    AreaId = u.AreaId ?? 0,
+                    ContractTypeId = u.ContractTypeId ?? 0
                 })
                 .FirstOrDefaultAsync();
 
@@ -179,12 +180,32 @@ namespace InventoryAPI.Controllers
         {
             // Buscamos al usuario incluyendo su Rol completo de la base de datos
             var user = await _context.Users
-                .Include(u => u.Role)
-                .FirstOrDefaultAsync(u => u.Username == request.Username && u.Password == request.Password);
+            .Include(u => u.Role)
+            .ThenInclude(r => r.RolePermissions!)
+            .ThenInclude(rp => rp.Permission)
+            .FirstOrDefaultAsync(u => u.Username == request.Username && u.Password == request.Password);
 
             if (user == null)
             {
                 return Unauthorized(new { mensaje = "Usuario o contraseña incorrectos" });
+            }
+
+            if (user.IsTwoFactorEnabled)
+            {
+                if (string.IsNullOrWhiteSpace(request.TwoFactorCode))
+                {
+                    return Unauthorized(new { requires2FA = true, mensaje = "Código 2FA requerido" });
+                }
+
+                var secretBytes = Base32Encoding.ToBytes(user.TwoFactorSecret);
+                var totp = new Totp(secretBytes);
+
+                bool isValid = totp.VerifyTotp(request.TwoFactorCode, out long timeStepMatched, window: new VerificationWindow(2, 2));
+
+                if (!isValid)
+                {
+                    return Unauthorized(new { mensaje = "El código de seguridad es incorrecto o ha expirado." });
+                }
             }
 
             return Ok(user);
@@ -217,6 +238,53 @@ namespace InventoryAPI.Controllers
             var fileUrl = $"http://db-inventario-api.somee.com/images/profiles/{fileName}";
 
             return Ok(new { Url = fileUrl });
+        }
+
+        [HttpPost("{id}/generate-2fa")]
+        public async Task<IActionResult> Generate2FA(int id)
+        {
+            var user = await _context.Users.FindAsync(id);
+            if (user == null) return NotFound();
+
+            var key = KeyGeneration.GenerateRandomKey(20);
+            var secret = Base32Encoding.ToString(key);
+            
+            user.TwoFactorSecret = secret;
+            await _context.SaveChangesAsync();
+
+            var qrUri = $"otpauth://totp/ControlInventario:{user.Username}?secret={secret}&issuer=ControlInventarioCorp";
+
+            return Ok(new { secret = secret, qrUri = qrUri });
+        }
+        
+        [HttpPost("{id}/enable-2fa")]
+        public async Task<IActionResult> Enable2FA(int id, [FromBody] string code)
+        {
+            var user = await _context.Users.FindAsync(id);
+            if (user == null || string.IsNullOrEmpty(user.TwoFactorSecret)) return NotFound();
+
+            var totp = new Totp(Base32Encoding.ToBytes(user.TwoFactorSecret));
+            if (totp.VerifyTotp(code, out _, window: new VerificationWindow(2, 2)))
+            {
+                user.IsTwoFactorEnabled = true;
+                await _context.SaveChangesAsync();
+                return Ok(new { mensaje = "Autenticación de Dos Pasos activada correctamente." });
+            }
+
+            return BadRequest(new { mensaje = "El código ingresado es inválido." });
+        }
+
+        [HttpPost("{id}/disable-2fa")]
+        public async Task<IActionResult> Disable2FA(int id)
+        {
+            var user = await _context.Users.FindAsync(id);
+            if (user == null) return NotFound();
+
+            user.IsTwoFactorEnabled = false;
+            user.TwoFactorSecret = null;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { mensaje = "2FA desactivado con éxito." });
         }
     }
 }
