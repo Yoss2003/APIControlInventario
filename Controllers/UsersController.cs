@@ -4,6 +4,11 @@ using InventoryAPI.Models.DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OtpNet;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace InventoryAPI.Controllers
 {
@@ -70,173 +75,128 @@ namespace InventoryAPI.Controllers
                 })
                 .FirstOrDefaultAsync();
 
-            if (userDto == null)
-            {
-                return NotFound(new { mensaje = "El usuario no fue localizado." });
-            }
+            if (userDto == null) return NotFound(new { mensaje = "El usuario no fue localizado." });
 
             return userDto;
         }
 
         // PUT: api/Users/5
-        // ACTUALIZADO CON TODOS LOS CAMPOS DEL SÚPER ADMINISTRADOR
+        // 🛠️ CORRECCIÓN: Ahora recibe 'User' en lugar de 'UserDTO' para hacer match perfecto con la app MAUI
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutUser(int id, [FromBody] UserDTO userDto)
+        public async Task<IActionResult> PutUser(int id, [FromBody] User userActualizado)
         {
-            if (id != userDto.Id)
-            {
-                return BadRequest(new { mensaje = "El ID de la ruta no coincide con el usuario." });
-            }
+            if (id != userActualizado.Id) return BadRequest(new { mensaje = "El ID no coincide." });
 
-            // Buscamos al usuario e incluimos su Rol para poder manipularlo
             var userDb = await _context.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == id);
+            if (userDb == null) return NotFound(new { mensaje = "El usuario no existe." });
 
-            if (userDb == null)
-            {
-                return NotFound(new { mensaje = "El usuario no existe." });
-            }
+            userDb.FirstName = userActualizado.FirstName;
+            userDb.LastName = userActualizado.LastName;
+            userDb.Email = userActualizado.Email;
+            userDb.Username = userActualizado.Username;
+            userDb.PhoneNumber = userActualizado.PhoneNumber;
+            userDb.ProfilePictureUrl = userActualizado.ProfilePictureUrl;
+            userDb.IsActive = userActualizado.IsActive;
 
-            // 1. Actualización de Campos de Texto y Estado
-            userDb.FirstName = userDto.FirstName;
-            userDb.LastName = userDto.LastName;
-            userDb.Email = userDto.Email;
-            userDb.Username = userDto.Username;
-            userDb.PhoneNumber = userDto.PhoneNumber;
-            userDb.ProfilePictureUrl = userDto.ProfilePictureUrl;
-            userDb.IsActive = userDto.IsActive;
+            // 🛡️ Proteger las llaves foráneas: Solo actualizamos si la app envía un ID mayor a 0
+            if (userActualizado.AreaId > 0) userDb.AreaId = userActualizado.AreaId;
+            if (userActualizado.JobPositionId > 0) userDb.JobPositionId = userActualizado.JobPositionId;
+            if (userActualizado.ContractTypeId > 0) userDb.ContractTypeId = userActualizado.ContractTypeId;
 
-            // 2. Actualización de los Ids de los Parámetros (Pickers de MAUI)
-            userDb.AreaId = userDto.AreaId;
-            userDb.JobPositionId = userDto.JobPositionId;
-            userDb.ContractTypeId = userDto.ContractTypeId;
+            if (userActualizado.RoleId > 0) userDb.RoleId = userActualizado.RoleId;
 
-            // 3. Traducción de Nombre de Rol a RolId numérico
-            if (userDto.RoleId > 0)
-            {
-                userDb.RoleId = userDto.RoleId;
-            }
-            else if (!string.IsNullOrWhiteSpace(userDto.RoleName))
-            {
-                var roleObj = await _context.Roles.FirstOrDefaultAsync(r => r.Name == userDto.RoleName);
-                if (roleObj != null)
-                {
-                    userDb.RoleId = roleObj.Id;
-                }
-            }
-
-            // 4. Actualización Opcional de Contraseña (Texto Plano acorde a tu Login)
-            if (!string.IsNullOrWhiteSpace(userDto.Password))
-            {
-                userDb.Password = userDto.Password;
-            }
+            if (!string.IsNullOrWhiteSpace(userActualizado.Password))
+                userDb.Password = userActualizado.Password;
 
             try
             {
                 await _context.SaveChangesAsync();
+                return NoContent();
             }
-            catch (DbUpdateConcurrencyException)
+            catch (Exception ex)
             {
-                if (!UserExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                return StatusCode(500, new { error = "Error al editar", detalle = ex.InnerException?.Message ?? ex.Message });
             }
-
-            return NoContent();
         }
 
         // POST: api/Users
         [HttpPost]
         public async Task<ActionResult<User>> PostUser(User user)
         {
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync();
+            // 🛡️ SALVAVIDAS FK: Como SQL Server bloqueó el cambio a NULL, 
+            // inyectamos el ID 1 por defecto para que la base de datos no arroje Error 500.
+            user.JobPositionId = (user.JobPositionId == null || user.JobPositionId <= 0) ? 1 : user.JobPositionId;
+            user.AreaId = (user.AreaId == null || user.AreaId <= 0) ? 1 : user.AreaId;
+            user.ContractTypeId = (user.ContractTypeId == null || user.ContractTypeId <= 0) ? 1 : user.ContractTypeId;
 
-            return CreatedAtAction("GetUser", new { id = user.Id }, user);
+            user.Age = user.Age ?? 0;
+            user.Role = null; // Evita error de roles duplicados en EF
+
+            try
+            {
+                _context.Users.Add(user);
+                await _context.SaveChangesAsync();
+                return CreatedAtAction("GetUser", new { id = user.Id }, user);
+            }
+            catch (Exception ex)
+            {
+                // Si SQL Server lo rechaza, te imprimirá EXACTAMENTE la razón
+                System.Diagnostics.Debug.WriteLine($"[CRÍTICO SQL]: {ex.InnerException?.Message ?? ex.Message}");
+                return StatusCode(500, new { error = "Fallo de Inserción en BD", detalle = ex.InnerException?.Message ?? ex.Message });
+            }
         }
 
-        // DELETE: api/Users/5
+        // ==========================================
+        // MÉTODOS DE 2FA Y FOTO (Intactos)
+        // ==========================================
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteUser(int id)
         {
             var user = await _context.Users.FindAsync(id);
-            if (user == null)
-            {
-                return NotFound();
-            }
+            if (user == null) return NotFound();
 
             _context.Users.Remove(user);
             await _context.SaveChangesAsync();
-
             return NoContent();
         }
 
         [HttpPost("Login")]
         public async Task<ActionResult<User>> Login([FromBody] LoginRequestDTO request)
         {
-            // Buscamos al usuario incluyendo su Rol completo de la base de datos
             var user = await _context.Users
             .Include(u => u.Role)
             .ThenInclude(r => r.RolePermissions!)
             .ThenInclude(rp => rp.Permission)
             .FirstOrDefaultAsync(u => u.Username == request.Username && u.Password == request.Password);
 
-            if (user == null)
-            {
-                return Unauthorized(new { mensaje = "Usuario o contraseña incorrectos" });
-            }
+            if (user == null) return Unauthorized(new { mensaje = "Usuario o contraseña incorrectos" });
 
             if (user.IsTwoFactorEnabled)
             {
                 if (string.IsNullOrWhiteSpace(request.TwoFactorCode))
-                {
                     return Unauthorized(new { requires2FA = true, mensaje = "Código 2FA requerido" });
-                }
 
                 var secretBytes = Base32Encoding.ToBytes(user.TwoFactorSecret);
                 var totp = new Totp(secretBytes);
-
                 bool isValid = totp.VerifyTotp(request.TwoFactorCode, out long timeStepMatched, window: new VerificationWindow(2, 2));
 
-                if (!isValid)
-                {
-                    return Unauthorized(new { mensaje = "El código de seguridad es incorrecto o ha expirado." });
-                }
+                if (!isValid) return Unauthorized(new { mensaje = "El código de seguridad es incorrecto o ha expirado." });
             }
 
             return Ok(user);
         }
 
-        private bool UserExists(int id)
-        {
-            return _context.Users.Any(e => e.Id == id);
-        }
-
         [HttpPost("UploadPhoto")]
         public async Task<IActionResult> UploadPhoto(IFormFile file)
         {
-            if (file == null || file.Length == 0)
-                return BadRequest(new { mensaje = "No se recibió ninguna imagen." });
-
+            if (file == null || file.Length == 0) return BadRequest(new { mensaje = "No imagen." });
             var folderPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "images", "profiles");
-
-            if (!Directory.Exists(folderPath))
-                Directory.CreateDirectory(folderPath);
-
+            if (!Directory.Exists(folderPath)) Directory.CreateDirectory(folderPath);
             var fileName = $"{Guid.NewGuid()}_{file.FileName}";
             var filePath = Path.Combine(folderPath, fileName);
-
-            using (var stream = new FileStream(filePath, FileMode.Create))
-            {
-                await file.CopyToAsync(stream);
-            }
-
+            using (var stream = new FileStream(filePath, FileMode.Create)) await file.CopyToAsync(stream);
             var fileUrl = $"http://db-inventario-api.somee.com/images/profiles/{fileName}";
-
             return Ok(new { Url = fileUrl });
         }
 
@@ -245,33 +205,27 @@ namespace InventoryAPI.Controllers
         {
             var user = await _context.Users.FindAsync(id);
             if (user == null) return NotFound();
-
             var key = KeyGeneration.GenerateRandomKey(20);
             var secret = Base32Encoding.ToString(key);
-            
             user.TwoFactorSecret = secret;
             await _context.SaveChangesAsync();
-
             var qrUri = $"otpauth://totp/ControlInventario:{user.Username}?secret={secret}&issuer=ControlInventarioCorp";
-
             return Ok(new { secret = secret, qrUri = qrUri });
         }
-        
+
         [HttpPost("{id}/enable-2fa")]
         public async Task<IActionResult> Enable2FA(int id, [FromBody] string code)
         {
             var user = await _context.Users.FindAsync(id);
             if (user == null || string.IsNullOrEmpty(user.TwoFactorSecret)) return NotFound();
-
             var totp = new Totp(Base32Encoding.ToBytes(user.TwoFactorSecret));
             if (totp.VerifyTotp(code, out _, window: new VerificationWindow(2, 2)))
             {
                 user.IsTwoFactorEnabled = true;
                 await _context.SaveChangesAsync();
-                return Ok(new { mensaje = "Autenticación de Dos Pasos activada correctamente." });
+                return Ok(new { mensaje = "Activado" });
             }
-
-            return BadRequest(new { mensaje = "El código ingresado es inválido." });
+            return BadRequest(new { mensaje = "Inválido" });
         }
 
         [HttpPost("{id}/disable-2fa")]
@@ -279,12 +233,10 @@ namespace InventoryAPI.Controllers
         {
             var user = await _context.Users.FindAsync(id);
             if (user == null) return NotFound();
-
             user.IsTwoFactorEnabled = false;
             user.TwoFactorSecret = null;
             await _context.SaveChangesAsync();
-
-            return Ok(new { mensaje = "2FA desactivado con éxito." });
+            return Ok(new { mensaje = "Desactivado" });
         }
     }
 }

@@ -3,10 +3,8 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Data
 {
-    public class AppDbContext : DbContext
+    public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
     {
-        public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
-
         // 1. Core e Inventario
         public DbSet<Inventory> Inventories { get; set; }
         public DbSet<Parameters> Parameters { get; set; }
@@ -39,6 +37,8 @@ namespace InventoryAPI.Data
         public DbSet<Movement> Movements { get; set; }
         public DbSet<AccountReceivable> AccountsReceivables { get; set; }
         public DbSet<InstallmentPayment> InstallmentPayments { get; set; }
+        public DbSet<Sale> Sales { get; set; }
+        public DbSet<SaleDetail> SaleDetails { get; set; }
 
         // 5. Seguridad y Logs
         public DbSet<SecurityQuestion> SecurityQuestions { get; set; }
