@@ -46,5 +46,6 @@ namespace InventoryAPI.Data
         public DbSet<HistoryLog> HistoryLogs { get; set; }
         public DbSet<ExportRoute> ExportRoutes { get; set; }
         public DbSet<ExchangeRate> ExchangeRates { get; set; }
+        public DbSet<EmployeePermission> EmployeePermissions { get; set; }
     }
 }

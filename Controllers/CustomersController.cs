@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http; // 🌟 Agregado para poder hacer consultas externas
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -43,7 +44,6 @@ namespace InventoryAPI.Controllers
         }
 
         // PUT: api/Customers/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
         public async Task<IActionResult> PutCustomer(int id, Customer customer)
         {
@@ -74,7 +74,6 @@ namespace InventoryAPI.Controllers
         }
 
         // POST: api/Customers
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
         public async Task<ActionResult<Customer>> PostCustomer(Customer customer)
         {
@@ -98,6 +97,37 @@ namespace InventoryAPI.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        [HttpGet("dni/{dni}")]
+        public async Task<IActionResult> ConsultarDniExterno(string dni)
+        {
+            if (string.IsNullOrWhiteSpace(dni) || dni.Length != 8)
+            {
+                return BadRequest(new { error = "El DNI debe tener exactamente 8 dígitos." });
+            }
+
+            try
+            {
+                using var client = new HttpClient();
+
+                string urlExterna = $"https://api.apis.net.pe/v1/dni?numero={dni}";
+
+                var response = await client.GetAsync(urlExterna);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var jsonContent = await response.Content.ReadAsStringAsync();
+
+                    return Content(jsonContent, "application/json");
+                }
+
+                return NotFound(new { error = "El DNI no fue localizado en la base de datos pública." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Falla de red al intentar conectar con RENIEC.", detalle = ex.Message });
+            }
         }
 
         private bool CustomerExists(int id)

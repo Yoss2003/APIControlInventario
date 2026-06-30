@@ -76,16 +76,49 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<Article>> PostArticle(Article article)
         {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
             try
             {
                 _context.Articles.Add(article);
                 await _context.SaveChangesAsync();
+
+                var nuevoMovimiento = new Movement
+                {
+                    ArticleId = article.Id,
+                    EmployeeId = article.LoggedUserId,
+                    ActionId = 1,
+                    MovementDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    Observation = "Registro inicial del producto en almacén",
+                    Amount = (double)article.Stock,
+                    SalePrice = (double)(article.SalePrice ?? 0m)
+                };
+                _context.Movements.Add(nuevoMovimiento);
+                string nombreUsuario = string.IsNullOrWhiteSpace(article.LoggedUserFullName)
+                                       ? "Usuario Desconocido"
+                                       : article.LoggedUserFullName;
+
+                var nuevoLog = new HistoryLog
+                {
+                    LogDate = DateTime.Now,
+                    Username = nombreUsuario,
+                    ModuleName = "Inventario",
+                    ActionName = "Creación",
+                    Detail = $"Producto \"{article.Name}\" agregado por \"{nombreUsuario}\" el \"{DateTime.Now:dd/MM/yyyy HH:mm}\""
+                };
+                _context.HistoryLogs.Add(nuevoLog);
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
                 return CreatedAtAction("GetArticle", new { id = article.Id }, article);
             }
             catch (Exception ex)
             {
-                var innerMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
-                return StatusCode(500, new { error = "Error en Base de Datos", detalle = innerMessage });
+                await transaction.RollbackAsync();
+
+                var innerMessage = ex.GetBaseException().Message;
+                return StatusCode(500, new { error = "Error crítico en Base de Datos", detalle = innerMessage });
             }
         }
 
