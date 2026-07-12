@@ -47,5 +47,6 @@ namespace InventoryAPI.Data
         public DbSet<ExportRoute> ExportRoutes { get; set; }
         public DbSet<ExchangeRate> ExchangeRates { get; set; }
         public DbSet<EmployeePermission> EmployeePermissions { get; set; }
+        public DbSet<SharedInventory> SharedInventories { get; set; }
     }
 }

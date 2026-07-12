@@ -25,7 +25,19 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Employee>>> GetEmployees()
         {
-            return await _context.Employees.ToListAsync();
+            var employees = await _context.Employees
+                                  .Include(e => e.User)
+                                  .ToListAsync();
+
+            foreach (var emp in employees)
+            {
+                if (emp.User != null)
+                {
+                    emp.PictureUrl = emp.User.ProfilePictureUrl;
+                }
+            }
+
+            return Ok(employees);
         }
 
         // GET: api/Employees/5
