@@ -1,6 +1,7 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using ControlInventario.Shared.Models;
+﻿using ControlInventario.Shared.Models;
 using InventoryAPI.Data;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -19,6 +20,7 @@ namespace InventoryAPI.Controllers
         }
 
         [HttpPost]
+        [HttpPost]
         public async Task<IActionResult> CreateSale([FromBody] Sale nuevaVenta)
         {
             if (nuevaVenta == null || !nuevaVenta.SaleDetails.Any())
@@ -31,8 +33,16 @@ namespace InventoryAPI.Controllers
             try
             {
                 nuevaVenta.SaleDate = DateTime.Now;
-                var empleado = await _context.Users.FindAsync(nuevaVenta.UserId);
-                string nombreVendedor = empleado != null ? $"{empleado.FirstName} {empleado.LastName}" : "Usuario Desconocido";
+
+                // 🚨 CORREGIDO: Usamos Include(u => u.Employee) para jalar los datos biográficos de forma limpia 🚨
+                var empleado = await _context.Users
+                    .Include(u => u.Employee)
+                    .FirstOrDefaultAsync(u => u.Id == nuevaVenta.UserId);
+
+                string nombreVendedor = empleado?.Employee != null
+                    ? $"{empleado.Employee.FirstName} {empleado.Employee.LastName}".Trim()
+                    : "Usuario Desconocido";
+
                 string nombreCliente = string.IsNullOrWhiteSpace(nuevaVenta.CustomerName) ? "Público General" : nuevaVenta.CustomerName;
 
                 foreach (var detalle in nuevaVenta.SaleDetails)

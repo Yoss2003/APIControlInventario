@@ -25,10 +25,10 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Role>>> GetRoles()
         {
-            return await _context.Roles
-                .Include(r => r.RolePermissions!)
-                    .ThenInclude(rp => rp.Permission)
-                .ToListAsync();
+            var roles = await _context.Roles
+                              .Include(r => r.RolePermissions)
+                              .ToListAsync();
+            return Ok(roles);
         }
 
         // GET: api/Roles/5
@@ -107,25 +107,26 @@ namespace InventoryAPI.Controllers
         [HttpPost("{id}/permissions")]
         public async Task<IActionResult> UpdateRolePermissions(int id, [FromBody] List<int> permissionIds)
         {
-            // 1. Validamos que el rol exista
-            var role = await _context.Roles.FindAsync(id);
-            if (role == null) return NotFound();
+            var rol = await _context.Roles.Include(r => r.RolePermissions).FirstOrDefaultAsync(r => r.Id == id);
 
-            // 2. Borramos los permisos actuales de este rol en la tabla intermedia
-            var existingPermissions = _context.RolePermissions.Where(rp => rp.RoleId == id);
-            _context.RolePermissions.RemoveRange(existingPermissions);
+            if (rol == null) return NotFound();
 
-            // 3. Insertamos los nuevos permisos que vienen desde la app móvil
-            var newRolePermissions = permissionIds.Select(pid => new RolePermission
+            _context.RolePermissions.RemoveRange(rol.RolePermissions!);
+
+            if (permissionIds != null && permissionIds.Any())
             {
-                RoleId = id,
-                PermissionId = pid
-            });
+                foreach (var pId in permissionIds)
+                {
+                    _context.RolePermissions.Add(new RolePermission
+                    {
+                        RoleId = id,
+                        PermissionId = pId
+                    });
+                }
+            }
 
-            _context.RolePermissions.AddRange(newRolePermissions);
             await _context.SaveChangesAsync();
-
-            return Ok();
+            return Ok(new { message = "Permisos actualizados con éxito" });
         }
 
         private bool RoleExists(int id)
