@@ -6,6 +6,7 @@ namespace InventoryAPI.Models.DTO
     {
         public int InventoryId { get; set; }
         public string GuestIdentifier { get; set; } = string.Empty;
+
         public SharedInventory.AccessMode AccessLevel { get; set; }
     }
 }
