@@ -48,5 +48,6 @@ namespace InventoryAPI.Data
         public DbSet<ExchangeRate> ExchangeRates { get; set; }
         public DbSet<EmployeePermission> EmployeePermissions { get; set; }
         public DbSet<SharedInventory> SharedInventories { get; set; }
+        public DbSet<CategoryMeasurementUnit> CategoryMeasurementUnits { get; set; }
     }
 }
