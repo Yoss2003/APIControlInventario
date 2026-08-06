@@ -1,161 +1,122 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class CategoriesController : ControllerBase
+    public class CategoriesController(ICategoryService categoryService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public CategoriesController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly ICategoryService _categoryService = categoryService;
 
         // GET: api/Categories
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Category>>> GetCategories()
+        public async Task<IActionResult> GetCategories()
         {
-            var categories = await _context.Categories
-                .Include(c => c.CategoryMeasurementUnits)
-                .ToListAsync();
-
-            foreach (var cat in categories)
+            try
             {
-                if (cat.CategoryMeasurementUnits != null)
-                {
-                    cat.SelectedUnitIds = cat.CategoryMeasurementUnits.Select(cmu => cmu.MeasurementUnitId).ToList();
-                }
+                var categories = await _categoryService.GetAllAsync();
+                return Ok(categories);
             }
-
-            return Ok(categories);
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar las categorías: {ex.Message}");
+            }
         }
 
-        // GET: api/Categories/
+        // GET: api/Categories/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Category>> GetCategory(int id)
+        public async Task<IActionResult> GetCategory(int id)
         {
-            var category = await _context.Categories.FindAsync(id);
-
-            if (category == null)
+            try
             {
-                return NotFound();
+                var category = await _categoryService.GetByIdAsync(id);
+                if (category == null)
+                {
+                    return NotFound($"No se encontró la categoría con ID {id}.");
+                }
+                return Ok(category);
             }
-
-            return category;
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar la categoría: {ex.Message}");
+            }
         }
 
-        // PUT: api/Categories/
+        // PUT: api/Categories/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutCategory(int id, Category category)
+        public async Task<IActionResult> PutCategory(int id, [FromBody] Category category)
         {
-            if (id != category.Id) return BadRequest(new { mensaje = "El ID no coincide." });
-
-            var categoriaExistente = await _context.Categories.FindAsync(id);
-            if (categoriaExistente == null) return NotFound(new { mensaje = "Categoría no encontrada." });
-
-            _context.Entry(categoriaExistente).CurrentValues.SetValues(category);
-
-            if (category.SelectedUnitIds != null)
+            if (id != category.Id)
             {
-                var unidadesViejas = await _context.CategoryMeasurementUnits
-                                                   .Where(cmu => cmu.CategoryId == id)
-                                                   .ToListAsync();
+                return BadRequest("El ID de la URL no coincide con el ID de la categoría proporcionada.");
+            }
 
-                _context.CategoryMeasurementUnits.RemoveRange(unidadesViejas);
-
-                foreach (var unitId in category.SelectedUnitIds)
-                {
-                    _context.CategoryMeasurementUnits.Add(new CategoryMeasurementUnit
-                    {
-                        CategoryId = id,
-                        MeasurementUnitId = unitId
-                    });
-                }
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
             }
 
             try
             {
-                await _context.SaveChangesAsync();
-                return Ok(categoriaExistente);
+                var result = await _categoryService.UpdateCategoryAsync(id, category);
+                if (!result.Success)
+                {
+                    return BadRequest(new { error = result.Message });
+                }
+
+                return NoContent();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { mensaje = "Error crítico al guardar en BD", detalle = ex.Message });
+                return StatusCode(500, $"Error interno del servidor al actualizar la categoría: {ex.Message}");
             }
         }
 
+        // POST: api/Categories
         [HttpPost]
-        public async Task<ActionResult<Category>> PostCategory(Category category)
+        public async Task<IActionResult> PostCategory([FromBody] Category category)
         {
-            category.CategoryMeasurementUnits = null;
-
-            _context.Categories.Add(category);
-            await _context.SaveChangesAsync();
-
-            if (category.SelectedUnitIds != null && category.SelectedUnitIds.Any())
+            if (!ModelState.IsValid)
             {
-                foreach (var unitId in category.SelectedUnitIds)
-                {
-                    _context.CategoryMeasurementUnits.Add(new CategoryMeasurementUnit
-                    {
-                        CategoryId = category.Id,
-                        MeasurementUnitId = unitId
-                    });
-                }
-                await _context.SaveChangesAsync();
+                return BadRequest(ModelState);
             }
 
-            return CreatedAtAction("GetCategory", new { id = category.Id }, category);
+            try
+            {
+                var result = await _categoryService.CreateCategoryAsync(category);
+                if (!result.Success)
+                {
+                    return BadRequest(new { error = result.Message });
+                }
+
+                return CreatedAtAction(nameof(GetCategory), new { id = category.Id }, category);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al crear la categoría: {ex.Message}");
+            }
         }
 
-        // DELETE: api/Categories/
+        // DELETE: api/Categories/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteCategory(int id)
         {
-            var category = await _context.Categories.FindAsync(id);
-            if (category == null)
-            {
-                return NotFound(new { mensaje = "Categoría no encontrada." });
-            }
-
-            bool tieneHijas = await _context.Categories.AnyAsync(c => c.ParentCategoryId == id);
-            if (tieneHijas)
-            {
-                return BadRequest(new { mensaje = "No puedes eliminar una categoría padre que aún contiene subcategorías." });
-            }
-
-            bool tieneArticulos = await _context.Articles.AnyAsync(a => a.CategoryId == id);
-            if (tieneArticulos)
-            {
-                return BadRequest(new { mensaje = "No puedes eliminar esta categoría porque existen artículos registrados en ella." });
-            }
-
             try
             {
-                _context.Categories.Remove(category);
-                await _context.SaveChangesAsync();
+                var result = await _categoryService.DeleteCategoryAsync(id);
+                if (!result.Success)
+                {
+                    return BadRequest(new { error = result.Message });
+                }
 
-                return Ok(new { mensaje = "Categoría eliminada con éxito." });
+                return NoContent();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { mensaje = "Error crítico al intentar eliminar la categoría.", detalle = ex.Message });
+                return StatusCode(500, $"Error interno del servidor al eliminar la categoría: {ex.Message}");
             }
-        }
-
-        private bool CategoryExists(int id)
-        {
-            return _context.Categories.Any(e => e.Id == id);
         }
     }
 }

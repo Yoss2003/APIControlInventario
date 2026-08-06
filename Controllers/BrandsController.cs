@@ -1,108 +1,134 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class BrandsController : ControllerBase
+    public class BrandsController(IBrandService brandService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public BrandsController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly IBrandService _brandService = brandService;
 
         // GET: api/Brands
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Brand>>> GetBrands()
+        public async Task<IActionResult> GetBrands()
         {
-            return await _context.Brands.ToListAsync();
+            try
+            {
+                var brands = await _brandService.GetAllAsync();
+                return Ok(brands);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar las marcas: {ex.Message}");
+            }
         }
 
         // GET: api/Brands/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Brand>> GetBrand(int id)
+        public async Task<IActionResult> GetBrand(int id)
         {
-            var brand = await _context.Brands.FindAsync(id);
-
-            if (brand == null)
+            try
             {
-                return NotFound();
+                var brand = await _brandService.GetByIdAsync(id);
+                if (brand == null)
+                {
+                    return NotFound($"No se encontró la marca con ID {id}.");
+                }
+                return Ok(brand);
             }
-
-            return brand;
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar la marca: {ex.Message}");
+            }
         }
 
         // PUT: api/Brands/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutBrand(int id, Brand brand)
+        public async Task<IActionResult> PutBrand(int id, [FromBody] Brand brand)
         {
             if (id != brand.Id)
             {
-                return BadRequest();
+                return BadRequest("El ID de la URL no coincide con el ID de la marca proporcionada.");
             }
 
-            _context.Entry(brand).State = EntityState.Modified;
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
             try
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!BrandExists(id))
+                var existingBrand = await _brandService.GetByIdAsync(id);
+                if (existingBrand == null)
                 {
-                    return NotFound();
+                    return NotFound($"No se encontró la marca con ID {id} para actualizar.");
                 }
-                else
-                {
-                    throw;
-                }
-            }
 
-            return NoContent();
+                var success = await _brandService.UpdateAsync(brand);
+                if (!success)
+                {
+                    return BadRequest("No se pudo actualizar la marca.");
+                }
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al actualizar la marca: {ex.Message}");
+            }
         }
 
         // POST: api/Brands
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Brand>> PostBrand(Brand brand)
+        public async Task<IActionResult> PostBrand([FromBody] Brand brand)
         {
-            _context.Brands.Add(brand);
-            await _context.SaveChangesAsync();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-            return CreatedAtAction("GetBrand", new { id = brand.Id }, brand);
+            try
+            {
+                var success = await _brandService.CreateAsync(brand);
+                if (!success)
+                {
+                    return BadRequest("No se pudo crear la marca.");
+                }
+
+                return CreatedAtAction(nameof(GetBrand), new { id = brand.Id }, brand);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al crear la marca: {ex.Message}");
+            }
         }
 
         // DELETE: api/Brands/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteBrand(int id)
         {
-            var brand = await _context.Brands.FindAsync(id);
-            if (brand == null)
+            try
             {
-                return NotFound();
+                var existingBrand = await _brandService.GetByIdAsync(id);
+                if (existingBrand == null)
+                {
+                    return NotFound($"No se encontró la marca con ID {id} para eliminar.");
+                }
+
+                var success = await _brandService.DeleteAsync(id);
+                if (!success)
+                {
+                    return BadRequest("No se pudo eliminar la marca.");
+                }
+
+                return NoContent();
             }
-
-            _context.Brands.Remove(brand);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool BrandExists(int id)
-        {
-            return _context.Brands.Any(e => e.Id == id);
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al eliminar la marca: {ex.Message}");
+            }
         }
     }
 }

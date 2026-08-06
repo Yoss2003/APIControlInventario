@@ -1,108 +1,39 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
+﻿using InventoryAPI.Services.IServices;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
-using ControlInventario.Shared.Models;
 
-namespace InventoryAPI.Controllers
+[Route("api/[controller]")]
+[ApiController]
+public class DateFormatsController(IDateFormatService dateFormatService) : ControllerBase
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class DateFormatsController : ControllerBase
+    private readonly IDateFormatService _dateFormatService = dateFormatService;
+
+    // Solo permitimos lectura
+    [HttpGet]
+    public async Task<IActionResult> GetDateFormats()
     {
-        private readonly AppDbContext _context;
-
-        public DateFormatsController(AppDbContext context)
+        try
         {
-            _context = context;
+            var formats = await _dateFormatService.GetAllAsync();
+            return Ok(formats);
         }
-
-        // GET: api/DateFormats
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<DateFormat>>> GetDateFormats()
+        catch (Exception ex)
         {
-            return await _context.DateFormats.ToListAsync();
+            return StatusCode(500, $"Error: {ex.Message}");
         }
+    }
 
-        // GET: api/DateFormats/5
-        [HttpGet("{id}")]
-        public async Task<ActionResult<DateFormat>> GetDateFormat(int id)
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetDateFormat(int id)
+    {
+        try
         {
-            var dateFormat = await _context.DateFormats.FindAsync(id);
-
-            if (dateFormat == null)
-            {
-                return NotFound();
-            }
-
-            return dateFormat;
+            var format = await _dateFormatService.GetByIdAsync(id);
+            if (format == null) return NotFound();
+            return Ok(format);
         }
-
-        // PUT: api/DateFormats/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutDateFormat(int id, DateFormat dateFormat)
+        catch (Exception ex)
         {
-            if (id != dateFormat.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(dateFormat).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!DateFormatExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return NoContent();
-        }
-
-        // POST: api/DateFormats
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPost]
-        public async Task<ActionResult<DateFormat>> PostDateFormat(DateFormat dateFormat)
-        {
-            _context.DateFormats.Add(dateFormat);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction("GetDateFormat", new { id = dateFormat.Id }, dateFormat);
-        }
-
-        // DELETE: api/DateFormats/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteDateFormat(int id)
-        {
-            var dateFormat = await _context.DateFormats.FindAsync(id);
-            if (dateFormat == null)
-            {
-                return NotFound();
-            }
-
-            _context.DateFormats.Remove(dateFormat);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool DateFormatExists(int id)
-        {
-            return _context.DateFormats.Any(e => e.Id == id);
+            return StatusCode(500, $"Error: {ex.Message}");
         }
     }
 }

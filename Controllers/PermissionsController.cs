@@ -1,26 +1,20 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
-using ControlInventario.Shared.Models;
+using InventoryAPI.Services.IServices;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class PermissionsController : ControllerBase
+    public class PermissionsController(IPermissionService permissionService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public PermissionsController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly IPermissionService _permissionService = permissionService;
 
         // GET: api/Permissions
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Permission>>> GetPermissions()
+        public async Task<IActionResult> GetPermissions()
         {
-            return await _context.Permissions.ToListAsync();
+            var permissions = await _permissionService.GetAllAsync();
+            return Ok(permissions);
         }
     }
 }

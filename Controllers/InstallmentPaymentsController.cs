@@ -1,108 +1,136 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class InstallmentPaymentsController : ControllerBase
+    public class InstallmentPaymentsController(IInstallmentPaymentService installmentPaymentService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public InstallmentPaymentsController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly IInstallmentPaymentService _installmentPaymentService = installmentPaymentService;
 
         // GET: api/InstallmentPayments
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<InstallmentPayment>>> GetInstallmentPayments()
+        public async Task<IActionResult> GetInstallmentPayments()
         {
-            return await _context.InstallmentPayments.ToListAsync();
+            try
+            {
+                var payments = await _installmentPaymentService.GetAllAsync();
+                return Ok(payments);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar los pagos en cuotas: {ex.Message}");
+            }
         }
 
         // GET: api/InstallmentPayments/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<InstallmentPayment>> GetInstallmentPayment(int id)
+        public async Task<IActionResult> GetInstallmentPayment(int id)
         {
-            var installmentPayment = await _context.InstallmentPayments.FindAsync(id);
-
-            if (installmentPayment == null)
+            try
             {
-                return NotFound();
-            }
+                var payment = await _installmentPaymentService.GetByIdAsync(id);
 
-            return installmentPayment;
+                if (payment == null)
+                {
+                    return NotFound($"No se encontró el pago en cuotas con ID {id}.");
+                }
+
+                return Ok(payment);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar el pago en cuotas: {ex.Message}");
+            }
         }
 
         // PUT: api/InstallmentPayments/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutInstallmentPayment(int id, InstallmentPayment installmentPayment)
+        public async Task<IActionResult> PutInstallmentPayment(int id, [FromBody] InstallmentPayment installmentPayment)
         {
             if (id != installmentPayment.Id)
             {
-                return BadRequest();
+                return BadRequest("El ID de la URL no coincide con el ID del pago proporcionado.");
             }
 
-            _context.Entry(installmentPayment).State = EntityState.Modified;
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
             try
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!InstallmentPaymentExists(id))
+                var existingPayment = await _installmentPaymentService.GetByIdAsync(id);
+                if (existingPayment == null)
                 {
-                    return NotFound();
+                    return NotFound($"No se encontró el pago en cuotas con ID {id} para actualizar.");
                 }
-                else
-                {
-                    throw;
-                }
-            }
 
-            return NoContent();
+                var success = await _installmentPaymentService.UpdateAsync(installmentPayment);
+                if (!success)
+                {
+                    return BadRequest("No se pudo actualizar el pago en cuotas.");
+                }
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al actualizar el pago en cuotas: {ex.Message}");
+            }
         }
 
         // POST: api/InstallmentPayments
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<InstallmentPayment>> PostInstallmentPayment(InstallmentPayment installmentPayment)
+        public async Task<IActionResult> PostInstallmentPayment([FromBody] InstallmentPayment installmentPayment)
         {
-            _context.InstallmentPayments.Add(installmentPayment);
-            await _context.SaveChangesAsync();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-            return CreatedAtAction("GetInstallmentPayment", new { id = installmentPayment.Id }, installmentPayment);
+            try
+            {
+                var success = await _installmentPaymentService.CreateAsync(installmentPayment);
+                if (!success)
+                {
+                    return BadRequest("No se pudo crear el pago en cuotas.");
+                }
+
+                return CreatedAtAction(nameof(GetInstallmentPayment), new { id = installmentPayment.Id }, installmentPayment);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al crear el pago en cuotas: {ex.Message}");
+            }
         }
 
         // DELETE: api/InstallmentPayments/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteInstallmentPayment(int id)
         {
-            var installmentPayment = await _context.InstallmentPayments.FindAsync(id);
-            if (installmentPayment == null)
+            try
             {
-                return NotFound();
+                var existingPayment = await _installmentPaymentService.GetByIdAsync(id);
+                if (existingPayment == null)
+                {
+                    return NotFound($"No se encontró el pago en cuotas con ID {id} para eliminar.");
+                }
+
+                var success = await _installmentPaymentService.DeleteAsync(id);
+                if (!success)
+                {
+                    return BadRequest("No se pudo eliminar el pago en cuotas.");
+                }
+
+                return NoContent();
             }
-
-            _context.InstallmentPayments.Remove(installmentPayment);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool InstallmentPaymentExists(int id)
-        {
-            return _context.InstallmentPayments.Any(e => e.Id == id);
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al eliminar el pago en cuotas: {ex.Message}");
+            }
         }
     }
 }

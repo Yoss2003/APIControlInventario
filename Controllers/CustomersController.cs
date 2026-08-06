@@ -1,138 +1,166 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http; // 🌟 Agregado para poder hacer consultas externas
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class CustomersController : ControllerBase
+    public class CustomersController(ICustomerService customerService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public CustomersController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly ICustomerService _customerService = customerService;
 
         // GET: api/Customers
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Customer>>> GetCustomers()
+        public async Task<IActionResult> GetCustomers()
         {
-            return await _context.Customers.ToListAsync();
+            try
+            {
+                var customers = await _customerService.GetAllAsync();
+                return Ok(customers);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar los clientes: {ex.Message}");
+            }
         }
 
         // GET: api/Customers/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Customer>> GetCustomer(int id)
+        public async Task<IActionResult> GetCustomer(int id)
         {
-            var customer = await _context.Customers.FindAsync(id);
-
-            if (customer == null)
+            try
             {
-                return NotFound();
-            }
+                var customer = await _customerService.GetByIdAsync(id);
 
-            return customer;
+                if (customer == null)
+                {
+                    return NotFound();
+                }
+
+                return Ok(customer);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar el cliente: {ex.Message}");
+            }
         }
 
         // PUT: api/Customers/5
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutCustomer(int id, Customer customer)
+        public async Task<IActionResult> PutCustomer(int id, [FromBody] Customer customer)
         {
             if (id != customer.Id)
             {
                 return BadRequest();
             }
 
-            _context.Entry(customer).State = EntityState.Modified;
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
             try
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!CustomerExists(id))
+                var existingCustomer = await _customerService.GetByIdAsync(id);
+                if (existingCustomer == null)
                 {
                     return NotFound();
                 }
-                else
-                {
-                    throw;
-                }
-            }
 
-            return NoContent();
+                var success = await _customerService.UpdateAsync(customer);
+                if (!success)
+                {
+                    return BadRequest("No se pudo actualizar el cliente.");
+                }
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al actualizar el cliente: {ex.Message}");
+            }
         }
 
         // POST: api/Customers
         [HttpPost]
-        public async Task<ActionResult<Customer>> PostCustomer(Customer customer)
+        public async Task<ActionResult<Customer>> PostCustomer([FromBody] Customer customer)
         {
-            _context.Customers.Add(customer);
-            await _context.SaveChangesAsync();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-            return CreatedAtAction("GetCustomer", new { id = customer.Id }, customer);
+            try
+            {
+                var success = await _customerService.CreateAsync(customer);
+                if (!success)
+                {
+                    return BadRequest("No se pudo crear el cliente.");
+                }
+
+                return CreatedAtAction(nameof(GetCustomer), new { id = customer.Id }, customer);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al crear el cliente: {ex.Message}");
+            }
         }
 
         // DELETE: api/Customers/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteCustomer(int id)
         {
-            var customer = await _context.Customers.FindAsync(id);
-            if (customer == null)
-            {
-                return NotFound();
-            }
-
-            _context.Customers.Remove(customer);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        [HttpGet("dni/{dni}")]
-        public async Task<IActionResult> ConsultarDniExterno(string dni)
-        {
-            if (string.IsNullOrWhiteSpace(dni) || dni.Length != 8)
-            {
-                return BadRequest(new { error = "El DNI debe tener exactamente 8 dígitos." });
-            }
-
             try
             {
-                using var client = new HttpClient();
-
-                string urlExterna = $"https://api.apis.net.pe/v1/dni?numero={dni}";
-
-                var response = await client.GetAsync(urlExterna);
-
-                if (response.IsSuccessStatusCode)
+                var existingCustomer = await _customerService.GetByIdAsync(id);
+                if (existingCustomer == null)
                 {
-                    var jsonContent = await response.Content.ReadAsStringAsync();
-
-                    return Content(jsonContent, "application/json");
+                    return NotFound();
                 }
 
-                return NotFound(new { error = "El DNI no fue localizado en la base de datos pública." });
+                var success = await _customerService.DeleteAsync(id);
+                if (!success)
+                {
+                    return BadRequest("No se pudo eliminar el cliente.");
+                }
+
+                return NoContent();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Falla de red al intentar conectar con RENIEC.", detalle = ex.Message });
+                return StatusCode(500, $"Error interno del servidor al eliminar el cliente: {ex.Message}");
             }
         }
 
-        private bool CustomerExists(int id)
+        // 🌟 ENDPOINT EXTERNO DNI MIGRADO AL SERVICIO
+        [HttpGet("dni/{dni}")]
+        public async Task<IActionResult> ConsultarDniExterno(string dni)
         {
-            return _context.Customers.Any(e => e.Id == id);
+            try
+            {
+                var result = await _customerService.ConsultarDniExternoAsync(dni);
+
+                if (!result.IsSuccess)
+                {
+                    if (result.DataOrError.Contains("exactamente"))
+                    {
+                        return BadRequest(new { error = result.DataOrError });
+                    }
+                    if (result.DataOrError.Contains("no fue localizado"))
+                    {
+                        return NotFound(new { error = result.DataOrError });
+                    }
+
+                    return StatusCode(500, new { error = "Falla de red al intentar conectar con RENIEC.", detalle = result.DataOrError });
+                }
+
+                return Content(result.DataOrError, "application/json");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error inesperado al consultar el DNI.", detalle = ex.Message });
+            }
         }
     }
 }

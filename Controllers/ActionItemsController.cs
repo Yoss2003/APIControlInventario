@@ -1,11 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
@@ -14,95 +8,139 @@ namespace InventoryAPI.Controllers
     [ApiController]
     public class ActionItemsController : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly IActionItemService _actionItemService;
 
-        public ActionItemsController(AppDbContext context)
+        public ActionItemsController(IActionItemService actionItemService)
         {
-            _context = context;
+            _actionItemService = actionItemService;
         }
 
         // GET: api/ActionItems
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<ActionItem>>> GetActions()
+        public async Task<IActionResult> GetActions()
         {
-            return await _context.Actions.ToListAsync();
+            try
+            {
+                // Actualizado a GetAllAsync()
+                var actionItems = await _actionItemService.GetAllAsync();
+                return Ok(actionItems);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor: {ex.Message}");
+            }
         }
 
         // GET: api/ActionItems/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<ActionItem>> GetActionItem(int id)
+        public async Task<IActionResult> GetActionItem(int id)
         {
-            var actionItem = await _context.Actions.FindAsync(id);
-
-            if (actionItem == null)
+            try
             {
-                return NotFound();
-            }
+                // Actualizado a GetByIdAsync()
+                var actionItem = await _actionItemService.GetByIdAsync(id);
 
-            return actionItem;
+                if (actionItem == null)
+                {
+                    return NotFound();
+                }
+
+                return Ok(actionItem);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor: {ex.Message}");
+            }
         }
 
         // PUT: api/ActionItems/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutActionItem(int id, ActionItem actionItem)
+        public async Task<IActionResult> PutActionItem(int id, [FromBody] ActionItem actionItem)
         {
             if (id != actionItem.Id)
             {
                 return BadRequest();
             }
 
-            _context.Entry(actionItem).State = EntityState.Modified;
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
             try
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!ActionItemExists(id))
+                var existingActionItem = await _actionItemService.GetByIdAsync(id);
+                if (existingActionItem == null)
                 {
                     return NotFound();
                 }
-                else
-                {
-                    throw;
-                }
-            }
 
-            return NoContent();
+                // Actualizado a UpdateAsync()
+                var success = await _actionItemService.UpdateAsync(actionItem);
+                if (!success)
+                {
+                    return BadRequest("No se pudo actualizar el Action Item.");
+                }
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor: {ex.Message}");
+            }
         }
 
         // POST: api/ActionItems
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<ActionItem>> PostActionItem(ActionItem actionItem)
+        public async Task<IActionResult> PostActionItem([FromBody] ActionItem actionItem)
         {
-            _context.Actions.Add(actionItem);
-            await _context.SaveChangesAsync();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-            return CreatedAtAction("GetActionItem", new { id = actionItem.Id }, actionItem);
+            try
+            {
+                // Actualizado a CreateAsync()
+                var success = await _actionItemService.CreateAsync(actionItem);
+                if (!success)
+                {
+                    return BadRequest("No se pudo crear el Action Item.");
+                }
+
+                return CreatedAtAction(nameof(GetActionItem), new { id = actionItem.Id }, actionItem);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor: {ex.Message}");
+            }
         }
 
         // DELETE: api/ActionItems/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteActionItem(int id)
         {
-            var actionItem = await _context.Actions.FindAsync(id);
-            if (actionItem == null)
+            try
             {
-                return NotFound();
+                var existingActionItem = await _actionItemService.GetByIdAsync(id);
+                if (existingActionItem == null)
+                {
+                    return NotFound();
+                }
+
+                // Actualizado a DeleteAsync()
+                var success = await _actionItemService.DeleteAsync(id);
+                if (!success)
+                {
+                    return BadRequest("No se pudo eliminar el Action Item.");
+                }
+
+                return NoContent();
             }
-
-            _context.Actions.Remove(actionItem);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool ActionItemExists(int id)
-        {
-            return _context.Actions.Any(e => e.Id == id);
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor: {ex.Message}");
+            }
         }
     }
 }

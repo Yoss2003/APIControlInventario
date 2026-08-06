@@ -1,108 +1,49 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class CurrenciesController : ControllerBase
+    public class CurrenciesController(ICurrencyService currencyService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public CurrenciesController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly ICurrencyService _currencyService = currencyService;
 
         // GET: api/Currencies
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Currency>>> GetCurrencies()
+        public async Task<IActionResult> GetCurrencies()
         {
-            return await _context.Currencies.ToListAsync();
+            try
+            {
+                var currencies = await _currencyService.GetAllAsync();
+                return Ok(currencies);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar las monedas: {ex.Message}");
+            }
         }
 
         // GET: api/Currencies/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Currency>> GetCurrency(int id)
+        public async Task<IActionResult> GetCurrency(int id)
         {
-            var currency = await _context.Currencies.FindAsync(id);
-
-            if (currency == null)
-            {
-                return NotFound();
-            }
-
-            return currency;
-        }
-
-        // PUT: api/Currencies/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutCurrency(int id, Currency currency)
-        {
-            if (id != currency.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(currency).State = EntityState.Modified;
-
             try
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!CurrencyExists(id))
+                var currency = await _currencyService.GetByIdAsync(id);
+
+                if (currency == null)
                 {
-                    return NotFound();
+                    return NotFound($"No se encontró la moneda con ID {id}.");
                 }
-                else
-                {
-                    throw;
-                }
+
+                return Ok(currency);
             }
-
-            return NoContent();
-        }
-
-        // POST: api/Currencies
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPost]
-        public async Task<ActionResult<Currency>> PostCurrency(Currency currency)
-        {
-            _context.Currencies.Add(currency);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction("GetCurrency", new { id = currency.Id }, currency);
-        }
-
-        // DELETE: api/Currencies/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteCurrency(int id)
-        {
-            var currency = await _context.Currencies.FindAsync(id);
-            if (currency == null)
+            catch (Exception ex)
             {
-                return NotFound();
+                return StatusCode(500, $"Error interno del servidor al recuperar la moneda: {ex.Message}");
             }
-
-            _context.Currencies.Remove(currency);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool CurrencyExists(int id)
-        {
-            return _context.Currencies.Any(e => e.Id == id);
         }
     }
 }

@@ -1,103 +1,34 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
-using ControlInventario.Shared.Models;
+using InventoryAPI.Services.IServices;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class TimeZoneItemsController : ControllerBase
+    public class TimeZoneItemsController(ITimeZoneItemService timeZoneItemService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public TimeZoneItemsController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly ITimeZoneItemService _timeZoneItemService = timeZoneItemService;
 
         // GET: api/TimeZoneItems
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<TimeZoneItem>>> GetTimeZones()
+        public async Task<IActionResult> GetTimeZones()
         {
-            return await _context.TimeZones.ToListAsync();
+            var timeZones = await _timeZoneItemService.GetAllAsync();
+            return Ok(timeZones);
         }
 
         // GET: api/TimeZoneItems/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<TimeZoneItem>> GetTimeZoneItem(int id)
+        public async Task<IActionResult> GetTimeZoneItem(int id)
         {
-            var timeZoneItem = await _context.TimeZones.FindAsync(id);
+            var timeZoneItem = await _timeZoneItemService.GetByIdAsync(id);
 
             if (timeZoneItem == null)
             {
                 return NotFound();
             }
 
-            return timeZoneItem;
-        }
-
-        // PUT: api/TimeZoneItems/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutTimeZoneItem(int id, TimeZoneItem timeZoneItem)
-        {
-            if (id != timeZoneItem.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(timeZoneItem).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!TimeZoneItemExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return NoContent();
-        }
-
-        // POST: api/TimeZoneItems
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPost]
-        public async Task<ActionResult<TimeZoneItem>> PostTimeZoneItem(TimeZoneItem timeZoneItem)
-        {
-            _context.TimeZones.Add(timeZoneItem);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction("GetTimeZoneItem", new { id = timeZoneItem.Id }, timeZoneItem);
-        }
-
-        // DELETE: api/TimeZoneItems/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteTimeZoneItem(int id)
-        {
-            var timeZoneItem = await _context.TimeZones.FindAsync(id);
-            if (timeZoneItem == null)
-            {
-                return NotFound();
-            }
-
-            _context.TimeZones.Remove(timeZoneItem);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool TimeZoneItemExists(int id)
-        {
-            return _context.TimeZones.Any(e => e.Id == id);
+            return Ok(timeZoneItem);
         }
     }
 }
