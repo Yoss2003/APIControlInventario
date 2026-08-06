@@ -1,108 +1,101 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ProfilesController : ControllerBase
+    public class ProfilesController(IProfileService profileService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public ProfilesController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly IProfileService _profileService = profileService;
 
         // GET: api/Profiles
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Profile>>> GetProfiles()
+        public async Task<IActionResult> GetProfiles()
         {
-            return await _context.Profiles.ToListAsync();
+            var profiles = await _profileService.GetAllAsync();
+            return Ok(profiles);
         }
 
         // GET: api/Profiles/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Profile>> GetProfile(int id)
+        public async Task<IActionResult> GetProfile(int id)
         {
-            var profile = await _context.Profiles.FindAsync(id);
+            var profile = await _profileService.GetByIdAsync(id);
 
             if (profile == null)
             {
                 return NotFound();
             }
 
-            return profile;
+            return Ok(profile);
         }
 
         // PUT: api/Profiles/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutProfile(int id, Profile profile)
+        public async Task<IActionResult> PutProfile(int id, [FromBody] Profile profile)
         {
             if (id != profile.Id)
             {
                 return BadRequest();
             }
 
-            _context.Entry(profile).State = EntityState.Modified;
-
-            try
+            if (!ModelState.IsValid)
             {
-                await _context.SaveChangesAsync();
+                return BadRequest(ModelState);
             }
-            catch (DbUpdateConcurrencyException)
+
+            var existingProfile = await _profileService.GetByIdAsync(id);
+            if (existingProfile == null)
             {
-                if (!ProfileExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                return NotFound();
+            }
+
+            var success = await _profileService.UpdateAsync(profile);
+            if (!success)
+            {
+                return BadRequest("No se pudo actualizar el perfil.");
             }
 
             return NoContent();
         }
 
         // POST: api/Profiles
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Profile>> PostProfile(Profile profile)
+        public async Task<IActionResult> PostProfile([FromBody] Profile profile)
         {
-            _context.Profiles.Add(profile);
-            await _context.SaveChangesAsync();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-            return CreatedAtAction("GetProfile", new { id = profile.Id }, profile);
+            var success = await _profileService.CreateAsync(profile);
+            if (!success)
+            {
+                return BadRequest("No se pudo crear el perfil.");
+            }
+
+            return CreatedAtAction(nameof(GetProfile), new { id = profile.Id }, profile);
         }
 
         // DELETE: api/Profiles/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteProfile(int id)
         {
-            var profile = await _context.Profiles.FindAsync(id);
-            if (profile == null)
+            var existingProfile = await _profileService.GetByIdAsync(id);
+            if (existingProfile == null)
             {
                 return NotFound();
             }
 
-            _context.Profiles.Remove(profile);
-            await _context.SaveChangesAsync();
+            var success = await _profileService.DeleteAsync(id);
+            if (!success)
+            {
+                return BadRequest("No se pudo eliminar el perfil.");
+            }
 
             return NoContent();
-        }
-
-        private bool ProfileExists(int id)
-        {
-            return _context.Profiles.Any(e => e.Id == id);
         }
     }
 }

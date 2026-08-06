@@ -1,108 +1,74 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class HistoryLogsController : ControllerBase
+    public class HistoryLogsController(IHistoryLogService historyLogService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public HistoryLogsController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly IHistoryLogService _historyLogService = historyLogService;
 
         // GET: api/HistoryLogs
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<HistoryLog>>> GetHistoryLogs()
+        public async Task<IActionResult> GetHistoryLogs()
         {
-            return await _context.HistoryLogs.ToListAsync();
+            try
+            {
+                var historyLogs = await _historyLogService.GetAllAsync();
+                return Ok(historyLogs);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar los registros de historial: {ex.Message}");
+            }
         }
 
         // GET: api/HistoryLogs/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<HistoryLog>> GetHistoryLog(int id)
+        public async Task<IActionResult> GetHistoryLog(int id)
         {
-            var historyLog = await _context.HistoryLogs.FindAsync(id);
-
-            if (historyLog == null)
-            {
-                return NotFound();
-            }
-
-            return historyLog;
-        }
-
-        // PUT: api/HistoryLogs/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutHistoryLog(int id, HistoryLog historyLog)
-        {
-            if (id != historyLog.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(historyLog).State = EntityState.Modified;
-
             try
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!HistoryLogExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
+                var historyLog = await _historyLogService.GetByIdAsync(id);
 
-            return NoContent();
+                if (historyLog == null)
+                {
+                    return NotFound($"No se encontró el registro de historial con ID {id}.");
+                }
+
+                return Ok(historyLog);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar el registro de historial: {ex.Message}");
+            }
         }
 
         // POST: api/HistoryLogs
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<HistoryLog>> PostHistoryLog(HistoryLog historyLog)
+        public async Task<IActionResult> PostHistoryLog([FromBody] HistoryLog historyLog)
         {
-            _context.HistoryLogs.Add(historyLog);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction("GetHistoryLog", new { id = historyLog.Id }, historyLog);
-        }
-
-        // DELETE: api/HistoryLogs/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteHistoryLog(int id)
-        {
-            var historyLog = await _context.HistoryLogs.FindAsync(id);
-            if (historyLog == null)
+            if (!ModelState.IsValid)
             {
-                return NotFound();
+                return BadRequest(ModelState);
             }
 
-            _context.HistoryLogs.Remove(historyLog);
-            await _context.SaveChangesAsync();
+            try
+            {
+                var success = await _historyLogService.CreateAsync(historyLog);
+                if (!success)
+                {
+                    return BadRequest("No se pudo crear el registro de historial.");
+                }
 
-            return NoContent();
-        }
-
-        private bool HistoryLogExists(int id)
-        {
-            return _context.HistoryLogs.Any(e => e.Id == id);
+                return CreatedAtAction(nameof(GetHistoryLog), new { id = historyLog.Id }, historyLog);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al crear el registro de historial: {ex.Message}");
+            }
         }
     }
 }

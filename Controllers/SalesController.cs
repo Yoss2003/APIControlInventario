@@ -1,98 +1,36 @@
-﻿using ControlInventario.Shared.Models;
-using InventoryAPI.Data;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
+using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class SalesController : ControllerBase
+    public class SalesController(ISaleService saleService) : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly ISaleService _saleService = saleService;
 
-        public SalesController(AppDbContext context)
-        {
-            _context = context;
-        }
-
-        [HttpPost]
         [HttpPost]
         public async Task<IActionResult> CreateSale([FromBody] Sale nuevaVenta)
         {
-            if (nuevaVenta == null || !nuevaVenta.SaleDetails.Any())
+            if (!ModelState.IsValid)
             {
-                return BadRequest("Datos de venta inválidos o carrito vacío.");
+                return BadRequest(ModelState);
             }
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            var result = await _saleService.ProcessSaleAsync(nuevaVenta);
 
-            try
+            if (!result.Success)
             {
-                nuevaVenta.SaleDate = DateTime.Now;
-
-                // 🚨 CORREGIDO: Usamos Include(u => u.Employee) para jalar los datos biográficos de forma limpia 🚨
-                var empleado = await _context.Users
-                    .Include(u => u.Employee)
-                    .FirstOrDefaultAsync(u => u.Id == nuevaVenta.UserId);
-
-                string nombreVendedor = empleado?.Employee != null
-                    ? $"{empleado.Employee.FirstName} {empleado.Employee.LastName}".Trim()
-                    : "Usuario Desconocido";
-
-                string nombreCliente = string.IsNullOrWhiteSpace(nuevaVenta.CustomerName) ? "Público General" : nuevaVenta.CustomerName;
-
-                foreach (var detalle in nuevaVenta.SaleDetails)
+                // Manejamos códigos de estado según el tipo de error
+                if (result.Message.Contains("crítico"))
                 {
-                    var articulo = await _context.Articles.FindAsync(detalle.ArticleId);
-
-                    if (articulo == null) return NotFound($"Artículo {detalle.ArticleId} no existe.");
-                    if (articulo.Stock < detalle.Quantity) return BadRequest($"Stock insuficiente para {articulo.Name}.");
-
-                    articulo.Stock -= (decimal)detalle.Quantity;
-                    articulo.ModificationDate = DateTime.Now;
-
-                    var nuevoMovimiento = new Movement
-                    {
-                        ArticleId = articulo.Id,
-                        EmployeeId = nuevaVenta.UserId,
-                        ActionId = 2, // Venta
-                        MovementDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-                        Observation = nuevaVenta.Notes,
-                        Amount = (double)detalle.Quantity,
-                        SalePrice = (double)detalle.UnitPrice,
-                        PaymentMethod = nuevaVenta.PaymentType.ToString(),
-                        Recipient = nombreCliente
-                    };
-                    _context.Movements.Add(nuevoMovimiento);
-
-                    var nuevoLog = new HistoryLog
-                    {
-                        LogDate = DateTime.Now,
-                        Username = nombreVendedor,
-                        ModuleName = "Ventas",
-                        ActionName = "Venta",
-                        Detail = $"Producto \"{articulo.Name}\" vendido por \"{nombreVendedor}\" el \"{DateTime.Now:dd/MM/yyyy HH:mm}\" a \"{nombreCliente}\""
-                    };
-                    _context.HistoryLogs.Add(nuevoLog);
+                    return StatusCode(500, new { Message = result.Message });
                 }
-
-                _context.Sales.Add(nuevaVenta);
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                return Ok(new { Message = "Venta procesada con éxito, stock actualizado y movimientos registrados." });
+                return BadRequest(new { Message = result.Message });
             }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
 
-                var errorReal = ex.GetBaseException().Message;
-                return StatusCode(500, $"Error crítico en el servidor: {errorReal}");
-            }
+            return Ok(new { Message = result.Message });
         }
     }
 }

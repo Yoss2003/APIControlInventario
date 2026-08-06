@@ -1,108 +1,101 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ExportRoutesController : ControllerBase
+    public class ExportRoutesController(IExportRouteService exportRouteService) : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly IExportRouteService _exportRouteService = exportRouteService;
 
-        public ExportRoutesController(AppDbContext context)
-        {
-            _context = context;
-        }
-
-        // GET: api/ExportRoutes
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<ExportRoute>>> GetExportRoutes()
+        public async Task<IActionResult> GetExportRoutes()
         {
-            return await _context.ExportRoutes.ToListAsync();
+            try
+            {
+                var routes = await _exportRouteService.GetAllAsync();
+                return Ok(routes);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor: {ex.Message}");
+            }
         }
 
-        // GET: api/ExportRoutes/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<ExportRoute>> GetExportRoute(int id)
+        public async Task<IActionResult> GetExportRoute(int id)
         {
-            var exportRoute = await _context.ExportRoutes.FindAsync(id);
-
-            if (exportRoute == null)
+            try
             {
-                return NotFound();
+                var route = await _exportRouteService.GetByIdAsync(id);
+                if (route == null) return NotFound();
+                return Ok(route);
             }
-
-            return exportRoute;
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor: {ex.Message}");
+            }
         }
 
-        // PUT: api/ExportRoutes/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutExportRoute(int id, ExportRoute exportRoute)
+        public async Task<IActionResult> PutExportRoute(int id, [FromBody] ExportRoute exportRoute)
         {
-            if (id != exportRoute.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(exportRoute).State = EntityState.Modified;
+            if (id != exportRoute.Id) return BadRequest();
+            if (!ModelState.IsValid) return BadRequest(ModelState);
 
             try
             {
-                await _context.SaveChangesAsync();
+                var existing = await _exportRouteService.GetByIdAsync(id);
+                if (existing == null) return NotFound();
+
+                var success = await _exportRouteService.UpdateAsync(exportRoute);
+                if (!success) return BadRequest("No se pudo actualizar la ruta de exportación.");
+
+                return NoContent();
             }
-            catch (DbUpdateConcurrencyException)
+            catch (Exception ex)
             {
-                if (!ExportRouteExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                return StatusCode(500, $"Error interno del servidor: {ex.Message}");
             }
-
-            return NoContent();
         }
 
-        // POST: api/ExportRoutes
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<ExportRoute>> PostExportRoute(ExportRoute exportRoute)
+        public async Task<ActionResult<ExportRoute>> PostExportRoute([FromBody] ExportRoute exportRoute)
         {
-            _context.ExportRoutes.Add(exportRoute);
-            await _context.SaveChangesAsync();
+            if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            return CreatedAtAction("GetExportRoute", new { id = exportRoute.Id }, exportRoute);
+            try
+            {
+                var success = await _exportRouteService.CreateAsync(exportRoute);
+                if (!success) return BadRequest("No se pudo crear la ruta de exportación.");
+
+                return CreatedAtAction(nameof(GetExportRoute), new { id = exportRoute.Id }, exportRoute);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor: {ex.Message}");
+            }
         }
 
-        // DELETE: api/ExportRoutes/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteExportRoute(int id)
         {
-            var exportRoute = await _context.ExportRoutes.FindAsync(id);
-            if (exportRoute == null)
+            try
             {
-                return NotFound();
+                var existing = await _exportRouteService.GetByIdAsync(id);
+                if (existing == null) return NotFound();
+
+                var success = await _exportRouteService.DeleteAsync(id);
+                if (!success) return BadRequest("No se pudo eliminar la ruta de exportación.");
+
+                return NoContent();
             }
-
-            _context.ExportRoutes.Remove(exportRoute);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool ExportRouteExists(int id)
-        {
-            return _context.ExportRoutes.Any(e => e.Id == id);
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor: {ex.Message}");
+            }
         }
     }
 }

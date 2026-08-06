@@ -1,108 +1,53 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class MovementsController : ControllerBase
+    public class MovementsController(IMovementService movementService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public MovementsController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly IMovementService _movementService = movementService;
 
         // GET: api/Movements
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Movement>>> GetMovements()
+        public async Task<IActionResult> GetMovements()
         {
-            return await _context.Movements.ToListAsync();
+            var movements = await _movementService.GetAllAsync();
+            return Ok(movements);
         }
 
         // GET: api/Movements/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Movement>> GetMovement(int id)
+        public async Task<IActionResult> GetMovement(int id)
         {
-            var movement = await _context.Movements.FindAsync(id);
+            var movement = await _movementService.GetByIdAsync(id);
 
             if (movement == null)
             {
                 return NotFound();
             }
 
-            return movement;
-        }
-
-        // PUT: api/Movements/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutMovement(int id, Movement movement)
-        {
-            if (id != movement.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(movement).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!MovementExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return NoContent();
+            return Ok(movement);
         }
 
         // POST: api/Movements
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Movement>> PostMovement(Movement movement)
+        public async Task<IActionResult> PostMovement([FromBody] Movement movement)
         {
-            _context.Movements.Add(movement);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction("GetMovement", new { id = movement.Id }, movement);
-        }
-
-        // DELETE: api/Movements/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteMovement(int id)
-        {
-            var movement = await _context.Movements.FindAsync(id);
-            if (movement == null)
+            if (!ModelState.IsValid)
             {
-                return NotFound();
+                return BadRequest(ModelState);
             }
 
-            _context.Movements.Remove(movement);
-            await _context.SaveChangesAsync();
+            var success = await _movementService.CreateAsync(movement);
+            if (!success)
+            {
+                return BadRequest("No se pudo crear el movimiento.");
+            }
 
-            return NoContent();
-        }
-
-        private bool MovementExists(int id)
-        {
-            return _context.Movements.Any(e => e.Id == id);
+            return CreatedAtAction(nameof(GetMovement), new { id = movement.Id }, movement);
         }
     }
 }

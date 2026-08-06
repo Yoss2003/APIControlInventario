@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
@@ -9,95 +8,139 @@ namespace InventoryAPI.Controllers
     [ApiController]
     public class AccountReceivablesController : ControllerBase
     {
-        private readonly AppDbContext _context;
+        private readonly IAccountReceivableService _accountReceivableService;
 
-        public AccountReceivablesController(AppDbContext context)
+        public AccountReceivablesController(IAccountReceivableService accountReceivableService)
         {
-            _context = context;
+            _accountReceivableService = accountReceivableService;
         }
 
         // GET: api/AccountReceivables
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<AccountReceivable>>> GetAccountsReceivables()
+        public async Task<IActionResult> GetAccountsReceivables()
         {
-            return await _context.AccountsReceivables.ToListAsync();
+            try
+            {
+                // Usamos el método genérico GetAllAsync() heredado del WorkContainer
+                var accountReceivables = await _accountReceivableService.GetAllAsync();
+                return Ok(accountReceivables);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar las cuentas por cobrar: {ex.Message}");
+            }
         }
 
         // GET: api/AccountReceivables/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<AccountReceivable>> GetAccountReceivable(int id)
+        public async Task<IActionResult> GetAccountReceivable(int id)
         {
-            var accountReceivable = await _context.AccountsReceivables.FindAsync(id);
-
-            if (accountReceivable == null)
-            {
-                return NotFound();
-            }
-
-            return accountReceivable;
-        }
-
-        // PUT: api/AccountReceivables/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutAccountReceivable(int id, AccountReceivable accountReceivable)
-        {
-            if (id != accountReceivable.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(accountReceivable).State = EntityState.Modified;
-
             try
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!AccountReceivableExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
-            }
+                // Usamos GetByIdAsync()
+                var accountReceivable = await _accountReceivableService.GetByIdAsync(id);
 
-            return NoContent();
+                if (accountReceivable == null)
+                {
+                    return NotFound($"No se encontró la cuenta por cobrar con ID {id}.");
+                }
+
+                return Ok(accountReceivable);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar la cuenta por cobrar: {ex.Message}");
+            }
         }
 
         // POST: api/AccountReceivables
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<AccountReceivable>> PostAccountReceivable(AccountReceivable accountReceivable)
+        public async Task<IActionResult> PostAccountReceivable([FromBody] AccountReceivable accountReceivable)
         {
-            _context.AccountsReceivables.Add(accountReceivable);
-            await _context.SaveChangesAsync();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-            return CreatedAtAction("GetAccountReceivable", new { id = accountReceivable.Id }, accountReceivable);
+            try
+            {
+                // Usamos CreateAsync()
+                var success = await _accountReceivableService.CreateAsync(accountReceivable);
+                if (!success)
+                {
+                    return BadRequest("No se pudo crear la cuenta por cobrar. Verifique los datos enviados.");
+                }
+
+                return CreatedAtAction(nameof(GetAccountReceivable), new { id = accountReceivable.Id }, accountReceivable);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al crear la cuenta por cobrar: {ex.Message}");
+            }
+        }
+
+        // PUT: api/AccountReceivables/5
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutAccountReceivable(int id, [FromBody] AccountReceivable accountReceivable)
+        {
+            if (id != accountReceivable.Id)
+            {
+                return BadRequest("El ID de la URL no coincide con el ID de la cuenta por cobrar proporcionada.");
+            }
+
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var existingAccountReceivable = await _accountReceivableService.GetByIdAsync(id);
+                if (existingAccountReceivable == null)
+                {
+                    return NotFound($"No se encontró la cuenta por cobrar con ID {id} para actualizar.");
+                }
+
+                // Usamos UpdateAsync()
+                var success = await _accountReceivableService.UpdateAsync(accountReceivable);
+                if (!success)
+                {
+                    return BadRequest("No se pudo actualizar la cuenta por cobrar.");
+                }
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al actualizar la cuenta por cobrar: {ex.Message}");
+            }
         }
 
         // DELETE: api/AccountReceivables/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteAccountReceivable(int id)
         {
-            var accountReceivable = await _context.AccountsReceivables.FindAsync(id);
-            if (accountReceivable == null)
+            try
             {
-                return NotFound();
+                var existingAccountReceivable = await _accountReceivableService.GetByIdAsync(id);
+                if (existingAccountReceivable == null)
+                {
+                    return NotFound($"No se encontró la cuenta por cobrar con ID {id} para eliminar.");
+                }
+
+                // Usamos DeleteAsync()
+                var success = await _accountReceivableService.DeleteAsync(id);
+                if (!success)
+                {
+                    return BadRequest("No se pudo eliminar la cuenta por cobrar.");
+                }
+
+                return NoContent();
             }
-
-            _context.AccountsReceivables.Remove(accountReceivable);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool AccountReceivableExists(int id)
-        {
-            return _context.AccountsReceivables.Any(e => e.Id == id);
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al eliminar la cuenta por cobrar: {ex.Message}");
+            }
         }
     }
 }

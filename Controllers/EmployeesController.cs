@@ -1,120 +1,136 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class EmployeesController : ControllerBase
+    public class EmployeesController(IEmployeeService employeeService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public EmployeesController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly IEmployeeService _employeeService = employeeService;
 
         // GET: api/Employees
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Employee>>> GetEmployees()
+        public async Task<IActionResult> GetEmployees()
         {
-            var employees = await _context.Employees
-                                  .Include(e => e.User)
-                                  .ToListAsync();
-
-            foreach (var emp in employees)
+            try
             {
-                if (emp.User != null)
-                {
-                    emp.PictureUrl = emp.User.ProfilePictureUrl;
-                }
+                var employees = await _employeeService.GetAllAsync();
+                return Ok(employees);
             }
-
-            return Ok(employees);
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar los empleados: {ex.Message}");
+            }
         }
 
         // GET: api/Employees/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Employee>> GetEmployee(int id)
+        public async Task<IActionResult> GetEmployee(int id)
         {
-            var employee = await _context.Employees.FindAsync(id);
-
-            if (employee == null)
+            try
             {
-                return NotFound();
-            }
+                var employee = await _employeeService.GetByIdAsync(id);
 
-            return employee;
+                if (employee == null)
+                {
+                    return NotFound();
+                }
+
+                return Ok(employee);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al recuperar el empleado: {ex.Message}");
+            }
         }
 
         // PUT: api/Employees/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutEmployee(int id, Employee employee)
+        public async Task<IActionResult> PutEmployee(int id, [FromBody] Employee employee)
         {
             if (id != employee.Id)
             {
                 return BadRequest();
             }
 
-            _context.Entry(employee).State = EntityState.Modified;
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
             try
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!EmployeeExists(id))
+                var existingEmployee = await _employeeService.GetByIdAsync(id);
+                if (existingEmployee == null)
                 {
                     return NotFound();
                 }
-                else
-                {
-                    throw;
-                }
-            }
 
-            return NoContent();
+                var success = await _employeeService.UpdateAsync(employee);
+                if (!success)
+                {
+                    return BadRequest("No se pudo actualizar el empleado.");
+                }
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al actualizar el empleado: {ex.Message}");
+            }
         }
 
         // POST: api/Employees
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Employee>> PostEmployee(Employee employee)
+        public async Task<IActionResult> PostEmployee([FromBody] Employee employee)
         {
-            _context.Employees.Add(employee);
-            await _context.SaveChangesAsync();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-            return CreatedAtAction("GetEmployee", new { id = employee.Id }, employee);
+            try
+            {
+                var success = await _employeeService.CreateAsync(employee);
+                if (!success)
+                {
+                    return BadRequest("No se pudo crear el empleado.");
+                }
+
+                return CreatedAtAction(nameof(GetEmployee), new { id = employee.Id }, employee);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al crear el empleado: {ex.Message}");
+            }
         }
 
         // DELETE: api/Employees/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteEmployee(int id)
         {
-            var employee = await _context.Employees.FindAsync(id);
-            if (employee == null)
+            try
             {
-                return NotFound();
+                var existingEmployee = await _employeeService.GetByIdAsync(id);
+                if (existingEmployee == null)
+                {
+                    return NotFound();
+                }
+
+                var success = await _employeeService.DeleteAsync(id);
+                if (!success)
+                {
+                    return BadRequest("No se pudo eliminar el empleado.");
+                }
+
+                return NoContent();
             }
-
-            _context.Employees.Remove(employee);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool EmployeeExists(int id)
-        {
-            return _context.Employees.Any(e => e.Id == id);
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno del servidor al eliminar el empleado: {ex.Message}");
+            }
         }
     }
 }

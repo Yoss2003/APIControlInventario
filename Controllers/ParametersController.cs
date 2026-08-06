@@ -1,108 +1,101 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using InventoryAPI.Data;
+﻿using Microsoft.AspNetCore.Mvc;
+using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class ParametersController : ControllerBase
+    public class ParametersController(IParametersService parametersService) : ControllerBase
     {
-        private readonly AppDbContext _context;
-
-        public ParametersController(AppDbContext context)
-        {
-            _context = context;
-        }
+        private readonly IParametersService _parametersService = parametersService;
 
         // GET: api/Parameters
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Parameters>>> GetParameters()
+        public async Task<IActionResult> GetParameters()
         {
-            return await _context.Parameters.ToListAsync();
+            var parameters = await _parametersService.GetAllAsync();
+            return Ok(parameters);
         }
 
         // GET: api/Parameters/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Parameters>> GetParameter(int id)
+        public async Task<IActionResult> GetParameter(int id)
         {
-            var parameter = await _context.Parameters.FindAsync(id);
+            var parameter = await _parametersService.GetByIdAsync(id);
 
             if (parameter == null)
             {
                 return NotFound();
             }
 
-            return parameter;
+            return Ok(parameter);
         }
 
         // PUT: api/Parameters/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutParameter(int id, Parameters parameter)
+        public async Task<IActionResult> PutParameter(int id, [FromBody] Parameters parameter)
         {
             if (id != parameter.Id)
             {
                 return BadRequest();
             }
 
-            _context.Entry(parameter).State = EntityState.Modified;
-
-            try
+            if (!ModelState.IsValid)
             {
-                await _context.SaveChangesAsync();
+                return BadRequest(ModelState);
             }
-            catch (DbUpdateConcurrencyException)
+
+            var existingParameter = await _parametersService.GetByIdAsync(id);
+            if (existingParameter == null)
             {
-                if (!ParameterExists(id))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                return NotFound();
+            }
+
+            var success = await _parametersService.UpdateAsync(parameter);
+            if (!success)
+            {
+                return BadRequest("No se pudo actualizar el parámetro.");
             }
 
             return NoContent();
         }
 
         // POST: api/Parameters
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Parameters>> PostParameter(Parameters parameter)
+        public async Task<IActionResult> PostParameter([FromBody] Parameters parameter)
         {
-            _context.Parameters.Add(parameter);
-            await _context.SaveChangesAsync();
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-            return CreatedAtAction("GetParameter", new { id = parameter.Id }, parameter);
+            var success = await _parametersService.CreateAsync(parameter);
+            if (!success)
+            {
+                return BadRequest("No se pudo crear el parámetro.");
+            }
+
+            return CreatedAtAction(nameof(GetParameter), new { id = parameter.Id }, parameter);
         }
 
         // DELETE: api/Parameters/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteParameter(int id)
         {
-            var parameter = await _context.Parameters.FindAsync(id);
-            if (parameter == null)
+            var existingParameter = await _parametersService.GetByIdAsync(id);
+            if (existingParameter == null)
             {
                 return NotFound();
             }
 
-            _context.Parameters.Remove(parameter);
-            await _context.SaveChangesAsync();
+            var success = await _parametersService.DeleteAsync(id);
+            if (!success)
+            {
+                return BadRequest("No se pudo eliminar el parámetro.");
+            }
 
             return NoContent();
-        }
-
-        private bool ParameterExists(int id)
-        {
-            return _context.Parameters.Any(e => e.Id == id);
         }
     }
 }
