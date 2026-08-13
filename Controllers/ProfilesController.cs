@@ -38,7 +38,7 @@ namespace InventoryAPI.Controllers
         {
             if (id != profile.Id)
             {
-                return BadRequest();
+                return BadRequest(new { error = "El ID no coincide." });
             }
 
             if (!ModelState.IsValid)
@@ -46,19 +46,21 @@ namespace InventoryAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            var existingProfile = await _profileService.GetByIdAsync(id);
-            if (existingProfile == null)
+            try
             {
-                return NotFound();
-            }
+                var success = await _profileService.UpdateAsync(profile);
 
-            var success = await _profileService.UpdateAsync(profile);
-            if (!success)
+                if (!success)
+                {
+                    return BadRequest(new { error = "No se pudo actualizar el perfil." });
+                }
+
+                return NoContent();
+            }
+            catch (Exception ex)
             {
-                return BadRequest("No se pudo actualizar el perfil.");
+                return StatusCode(500, new { error = "Error interno del servidor", detalle = ex.InnerException?.Message ?? ex.Message });
             }
-
-            return NoContent();
         }
 
         // POST: api/Profiles

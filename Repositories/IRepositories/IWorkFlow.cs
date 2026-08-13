@@ -18,6 +18,8 @@ namespace InventoryAPI.Repositories.IRepositories
         IGenericRepository<HistoryLog> HistoryLogs { get; }
         IGenericRepository<InstallmentPayment> InstallmentPayments { get; }
         IGenericRepository<Inventory> Inventories { get; }
+        IGenericRepository<Language> Languages { get; }
+        IGenericRepository<MeasurementUnit> MeasurementUnits { get; }
         IGenericRepository<Movement> Movements { get; }
         IGenericRepository<Notification> Notifications { get; }
         IGenericRepository<Parameters> Parameters { get; }

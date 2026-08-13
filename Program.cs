@@ -8,14 +8,16 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddHostedService<ApprovalCleanupService>();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
 
-// INTEGRACIÓN SENIOR: Activamos el soporte para clientes HTTP (Necesario para consultar SUNAT)
+// Tareas en segundo plano (Cron Jobs)
+builder.Services.AddHostedService<ApprovalCleanupService>();
+
+// Soporte para clientes HTTP (Necesario para consultar SUNAT)
 builder.Services.AddHttpClient();
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -27,6 +29,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Registro de WorkFlow
 builder.Services.AddScoped<IWorkFlow, WorkFlow>();
+
+// Registro de TODOS los Servicios
 builder.Services.AddScoped<IAccountReceivableService, AccountReceivableService>();
 builder.Services.AddScoped<IActionItemService, ActionItemService>();
 builder.Services.AddScoped<IArticleService, ArticleService>();
@@ -56,8 +60,7 @@ builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IThemeService, ThemeService>();
 builder.Services.AddScoped<ITimeZoneItemService, TimeZoneItemService>();
 builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddHostedService<ApprovalCleanupService>();
-builder.Services.AddHttpClient();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.

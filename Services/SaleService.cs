@@ -18,23 +18,22 @@ namespace InventoryAPI.Services
             {
                 nuevaVenta.SaleDate = DateTime.Now;
 
-                // 1. Recuperar al vendedor. Como no podemos usar .Include directo en el repo genérico básico,
-                // traemos al usuario y luego buscamos sus datos de empleado.
                 var userMatch = await _workFlow.Repository<User>().FindAsync(u => u.Id == nuevaVenta.UserId);
                 var vendedorUser = userMatch.FirstOrDefault();
-
                 var empMatch = await _workFlow.Repository<Employee>().FindAsync(e => e.UserId == nuevaVenta.UserId || e.Id == nuevaVenta.UserId);
                 var vendedorEmpleado = empMatch.FirstOrDefault();
 
-                string nombreVendedor = vendedorEmpleado != null
-                    ? $"{vendedorEmpleado.FirstName} {vendedorEmpleado.LastName}".Trim()
-                    : (vendedorUser?.Username ?? "Usuario Desconocido");
+                if (vendedorEmpleado == null)
+                {
+                    return (false, "El usuario actual no tiene un perfil de Empleado asociado. No se puede registrar el movimiento de stock.");
+                }
+
+                string nombreVendedor = $"{vendedorEmpleado.FirstName} {vendedorEmpleado.LastName}".Trim();
 
                 string nombreCliente = string.IsNullOrWhiteSpace(nuevaVenta.CustomerName)
                     ? "Público General"
                     : nuevaVenta.CustomerName;
 
-                // 2. Procesar cada detalle de la venta
                 foreach (var detalle in nuevaVenta.SaleDetails)
                 {
                     var articulo = await _workFlow.Repository<Article>().GetByIdAsync(detalle.ArticleId);
@@ -42,16 +41,13 @@ namespace InventoryAPI.Services
                     if (articulo == null) return (false, $"Artículo {detalle.ArticleId} no existe.");
                     if (articulo.Stock < detalle.Quantity) return (false, $"Stock insuficiente para {articulo.Name}.");
 
-                    // 2.1 Actualizar Stock
                     articulo.Stock -= (decimal)detalle.Quantity;
                     articulo.ModificationDate = DateTime.Now;
-                    // Al estar en memoria, EF Core rastrea este cambio de stock automáticamente
 
-                    // 2.2 Crear Movimiento
                     var nuevoMovimiento = new Movement
                     {
                         ArticleId = articulo.Id,
-                        EmployeeId = nuevaVenta.UserId,
+                        EmployeeId = vendedorEmpleado.Id,
                         ActionId = 2, // Venta
                         MovementDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                         Observation = nuevaVenta.Notes,
@@ -62,7 +58,6 @@ namespace InventoryAPI.Services
                     };
                     await _workFlow.Repository<Movement>().AddAsync(nuevoMovimiento);
 
-                    // 2.3 Crear Log de Auditoría
                     var nuevoLog = new HistoryLog
                     {
                         LogDate = DateTime.Now,
@@ -74,11 +69,7 @@ namespace InventoryAPI.Services
                     await _workFlow.Repository<HistoryLog>().AddAsync(nuevoLog);
                 }
 
-                // 3. Agregar la cabecera de la Venta
                 await _workFlow.Repository<Sale>().AddAsync(nuevaVenta);
-
-                // 4. EL TRUCO MÁGICO: CompleteAsync hace un solo SaveChangesAsync.
-                // Si algo falla antes de esta línea, NO SE GUARDA NADA (Transacción implícita exitosa).
                 await _workFlow.CompleteAsync();
 
                 return (true, "Venta procesada con éxito, stock actualizado y movimientos registrados.");
