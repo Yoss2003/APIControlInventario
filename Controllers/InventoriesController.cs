@@ -20,7 +20,7 @@ namespace InventoryAPI.Controllers
         }
 
         // GET: api/Inventories/5
-        [HttpGet("{id}")]
+        [HttpGet("{id:int}")]
         public async Task<IActionResult> GetInventory(int id)
         {
             var inventory = await _inventoryService.GetByIdAsync(id);
@@ -34,7 +34,7 @@ namespace InventoryAPI.Controllers
         }
 
         // PUT: api/Inventories/5
-        [HttpPut("{id}")]
+        [HttpPut("{id:int}")]
         public async Task<IActionResult> PutInventory(int id, [FromBody] Inventory inventory)
         {
             if (id != inventory.Id)
@@ -45,12 +45,6 @@ namespace InventoryAPI.Controllers
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
-            }
-
-            var existingInventory = await _inventoryService.GetByIdAsync(id);
-            if (existingInventory == null)
-            {
-                return NotFound();
             }
 
             var success = await _inventoryService.UpdateAsync(inventory);
@@ -81,15 +75,9 @@ namespace InventoryAPI.Controllers
         }
 
         // DELETE: api/Inventories/5
-        [HttpDelete("{id}")]
+        [HttpDelete("{id:int}")]
         public async Task<IActionResult> DeleteInventory(int id)
         {
-            var existingInventory = await _inventoryService.GetByIdAsync(id);
-            if (existingInventory == null)
-            {
-                return NotFound();
-            }
-
             var success = await _inventoryService.DeleteAsync(id);
             if (!success)
             {
@@ -115,6 +103,40 @@ namespace InventoryAPI.Controllers
             }
 
             return Ok(new { mensaje = result.Message });
+        }
+
+        // GET: api/Inventories/5/Shared
+        [HttpGet("{inventoryId:int}/Shared")]
+        public async Task<IActionResult> GetSharedInventories(int inventoryId)
+        {
+            try
+            {
+                var sharedList = await _inventoryService.GetSharedInventoriesAsync(inventoryId);
+                return Ok(sharedList);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al obtener la lista de accesos", detalle = ex.Message });
+            }
+        }
+
+        // DELETE: api/Inventories/Revoke/5
+        [HttpDelete("Revoke/{sharedInventoryId:int}")]
+        public async Task<IActionResult> RevokeAccess(int sharedInventoryId)
+        {
+            try
+            {
+                var success = await _inventoryService.RevokeAccessAsync(sharedInventoryId);
+
+                if (!success)
+                    return BadRequest(new { error = "No se pudo revocar el acceso. Es posible que el registro ya no exista." });
+
+                return Ok(new { mensaje = "Acceso revocado correctamente." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al revocar acceso", detalle = ex.Message });
+            }
         }
     }
 }
