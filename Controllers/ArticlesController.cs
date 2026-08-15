@@ -50,12 +50,9 @@ namespace InventoryAPI.Controllers
 
             try
             {
-                var existingArticle = await _articleService.GetByIdAsync(id);
-                if (existingArticle == null) return NotFound();
-
-                // Cambiado de UpdateArticleAsync a UpdateAsync
                 var success = await _articleService.UpdateAsync(article);
-                if (!success) return BadRequest("No se pudo actualizar el artículo.");
+
+                if (!success) return NotFound(new { error = "El artículo no existe o no se pudo actualizar." });
 
                 return NoContent();
             }
