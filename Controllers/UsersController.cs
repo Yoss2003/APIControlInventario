@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
-using InventoryAPI.Models.DTO;
+using ControlInventario.Shared.Models.DTO;
 
 namespace InventoryAPI.Controllers
 {
@@ -22,16 +22,29 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<UserDTO>>> GetUsers()
         {
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            // 2. Filtramos los usuarios para que solo devuelva los de la sucursal que hace la petición
             var users = await _userService.GetUsersDtoAsync();
-            return Ok(users);
+            var companyUsers = users.Where(u => u.CompanyId == companyId).ToList();
+
+            return Ok(companyUsers);
         }
 
         // GET: api/Users/5
         [HttpGet("{id}")]
         public async Task<ActionResult<UserDTO>> GetUser(int id)
         {
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
             var userDto = await _userService.GetUserDtoByIdAsync(id);
-            if (userDto == null) return NotFound(new { mensaje = "El usuario no fue localizado." });
+
+            if (userDto == null || userDto.CompanyId != companyId)
+                return NotFound(new { mensaje = "El usuario no fue localizado o no tienes permisos." });
 
             return Ok(userDto);
         }
@@ -40,6 +53,16 @@ namespace InventoryAPI.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> PutUser(int id, [FromBody] User userActualizado)
         {
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            userActualizado.CompanyId = companyId;
+
+            var existingUser = await _userService.GetUserDtoByIdAsync(id);
+            if (existingUser == null || existingUser.CompanyId != companyId)
+                return NotFound(new { mensaje = "El usuario no existe o no pertenece a tu sucursal." });
+
             var result = await _userService.UpdateUserAsync(id, userActualizado);
             if (!result.Success)
             {
@@ -55,6 +78,11 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<User>> PostUser([FromBody] User user)
         {
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
+
+            user.CompanyId = int.Parse(companyIdHeader!);
+
             var result = await _userService.CreateUserAsync(user, _env.ContentRootPath);
             if (!result.Success)
             {
@@ -67,9 +95,18 @@ namespace InventoryAPI.Controllers
             return CreatedAtAction(nameof(GetUser), new { id = ((User)result.Data).Id }, result.Data);
         }
 
+        // DELETE: api/Users/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteUser(int id)
         {
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            var existingUser = await _userService.GetUserDtoByIdAsync(id);
+            if (existingUser == null || existingUser.CompanyId != companyId)
+                return NotFound();
+
             var success = await _userService.DeleteAsync(id);
             if (!success) return NotFound();
 

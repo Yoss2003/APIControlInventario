@@ -10,13 +10,24 @@ namespace InventoryAPI.Controllers
     {
         private readonly ICustomerService _customerService = customerService;
 
+        [HttpGet("test-conexion")]
+        public IActionResult TestConexioMultiTenant()
+        {
+            return Ok(new { mensaje = "¡ESTE ES EL CÓDIGO NUEVO 2026!" });
+        }
+
         // GET: api/Customers
         [HttpGet]
         public async Task<IActionResult> GetCustomers()
         {
             try
             {
-                var customers = await _customerService.GetAllAsync();
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                    return BadRequest("Falta indicar la sucursal (X-Company-Id).");
+
+                int companyId = int.Parse(companyIdHeader!);
+                var customers = await _customerService.GetAllByCompanyIdAsync(companyId);
+
                 return Ok(customers);
             }
             catch (Exception ex)

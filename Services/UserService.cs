@@ -1,5 +1,5 @@
 ﻿using ControlInventario.Shared.Models;
-using InventoryAPI.Models.DTO;
+using ControlInventario.Shared.Models.DTO;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
@@ -183,17 +183,23 @@ namespace InventoryAPI.Services
         {
             var usersMatch = await _workFlow.Repository<User>().GetAllWithIncludeAsync(
                 u => u.Role!,
-                u => u.Employee!
+                u => u.Employee!,
+                u => u.Company!
             );
 
-            // Si necesitamos incluir los RolePermissions en cascada
-            var allUsers = await _workFlow.Repository<User>().GetAllAsync();
-            var targetUser = allUsers.FirstOrDefault(u => u.Username == request.Username && u.Password == request.Password);
+            var targetUser = usersMatch.FirstOrDefault(u => u.Username == request.Username && u.Password == request.Password);
 
             if (targetUser == null) return (false, null, "Usuario o contraseña incorrectos", false, false, false);
 
+            int DEVELOPER_ROLE_ID = 1;
+
+            if (targetUser.RoleId != DEVELOPER_ROLE_ID && targetUser.CompanyId != request.CompanyId)
+            {
+                return (false, null, "Estas credenciales no están autorizadas para esta empresa o sucursal.", false, false, false);
+            }
+
             if (!targetUser.IsActive || targetUser.StatusId != 1)
-                return (false, null, "Tu cuenta se encuentra inactiva o pendiente de validación por parte de Gerencia.", false, false, true);
+                return (false, null, "Tu cuenta se encuentra inactiva o pendiente de validación.", false, false, true);
 
             if (targetUser.IsTwoFactorEnabled)
             {

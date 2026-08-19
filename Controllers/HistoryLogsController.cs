@@ -16,13 +16,13 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                var historyLogs = await _historyLogService.GetAllAsync();
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal (X-Company-Id).");
+                int companyId = int.Parse(companyIdHeader!);
+
+                var historyLogs = await _historyLogService.GetAllByCompanyIdAsync(companyId);
                 return Ok(historyLogs);
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al recuperar los registros de historial: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
         // GET: api/HistoryLogs/5
@@ -50,25 +50,17 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> PostHistoryLog([FromBody] HistoryLog historyLog)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
+            if (!ModelState.IsValid) return BadRequest(ModelState);
             try
             {
-                var success = await _historyLogService.CreateAsync(historyLog);
-                if (!success)
-                {
-                    return BadRequest("No se pudo crear el registro de historial.");
-                }
+                if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                    historyLog.CompanyId = int.Parse(companyIdHeader!);
 
+                var success = await _historyLogService.CreateAsync(historyLog);
+                if (!success) return BadRequest("No se pudo crear.");
                 return CreatedAtAction(nameof(GetHistoryLog), new { id = historyLog.Id }, historyLog);
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al crear el registro de historial: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
     }
 }

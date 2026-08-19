@@ -14,7 +14,12 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetProfiles()
         {
-            var profiles = await _profileService.GetAllAsync();
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) 
+                return BadRequest("Falta indicar la sucursal.");
+
+            int companyId = int.Parse(companyIdHeader!);
+
+            var profiles = await _profileService.GetAllByCompanyIdAsync(companyId);
             return Ok(profiles);
         }
 
@@ -22,12 +27,14 @@ namespace InventoryAPI.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetProfile(int id)
         {
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
+
+            int companyId = int.Parse(companyIdHeader!);
             var profile = await _profileService.GetByIdAsync(id);
 
-            if (profile == null)
-            {
+            if (profile == null || profile.CompanyId != companyId)
                 return NotFound();
-            }
 
             return Ok(profile);
         }
@@ -36,30 +43,35 @@ namespace InventoryAPI.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> PutProfile(int id, [FromBody] Profile profile)
         {
-            if (id != profile.Id)
-            {
+            if (id != profile.Id) 
                 return BadRequest(new { error = "El ID no coincide." });
-            }
 
-            if (!ModelState.IsValid)
-            {
+            if (!ModelState.IsValid) 
                 return BadRequest(ModelState);
-            }
+
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
+
+            int companyId = int.Parse(companyIdHeader!);
 
             try
             {
+                profile.CompanyId = companyId;
+
+                var existingProfile = await _profileService.GetByIdAsync(id);
+                if (existingProfile == null || existingProfile.CompanyId != companyId)
+                    return NotFound(new { error = "Registro no encontrado o no pertenece a tu sucursal." });
+
                 var success = await _profileService.UpdateAsync(profile);
 
-                if (!success)
-                {
-                    return BadRequest(new { error = "No se pudo actualizar el perfil." });
-                }
+                if (!success) 
+                    return BadRequest(new { error = "No se pudo actualizar." });
 
                 return NoContent();
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Error interno del servidor", detalle = ex.InnerException?.Message ?? ex.Message });
+                return StatusCode(500, new { error = "Error interno", detalle = ex.InnerException?.Message ?? ex.Message });
             }
         }
 
@@ -67,37 +79,14 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> PostProfile([FromBody] Profile profile)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                profile.CompanyId = int.Parse(companyIdHeader!);
 
             var success = await _profileService.CreateAsync(profile);
-            if (!success)
-            {
-                return BadRequest("No se pudo crear el perfil.");
-            }
-
+            if (!success) return BadRequest("No se pudo crear.");
             return CreatedAtAction(nameof(GetProfile), new { id = profile.Id }, profile);
-        }
-
-        // DELETE: api/Profiles/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteProfile(int id)
-        {
-            var existingProfile = await _profileService.GetByIdAsync(id);
-            if (existingProfile == null)
-            {
-                return NotFound();
-            }
-
-            var success = await _profileService.DeleteAsync(id);
-            if (!success)
-            {
-                return BadRequest("No se pudo eliminar el perfil.");
-            }
-
-            return NoContent();
         }
     }
 }

@@ -16,7 +16,11 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                var employees = await _employeeService.GetAllAsync();
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                    return BadRequest("Falta indicar la sucursal (X-Company-Id).");
+                
+                int companyId = int.Parse(companyIdHeader!);
+                var employees = await _employeeService.GetAllByCompanyIdAsync(companyId);
                 return Ok(employees);
             }
             catch (Exception ex)

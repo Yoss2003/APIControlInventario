@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
-using InventoryAPI.Models.DTO;
+using ControlInventario.Shared.Models.DTO;
 
 namespace InventoryAPI.Controllers
 {
@@ -15,7 +15,10 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetInventories()
         {
-            var inventories = await _inventoryService.GetAllAsync();
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            var inventories = await _inventoryService.GetAllByCompanyIdAsync(companyId);
             return Ok(inventories);
         }
 
@@ -60,17 +63,13 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> PostInventory([FromBody] Inventory inventory)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                inventory.CompanyId = int.Parse(companyIdHeader!);
 
             var success = await _inventoryService.CreateAsync(inventory);
-            if (!success)
-            {
-                return BadRequest("No se pudo crear el inventario.");
-            }
-
+            if (!success) return BadRequest("No se pudo crear.");
             return CreatedAtAction(nameof(GetInventory), new { id = inventory.Id }, inventory);
         }
 

@@ -32,6 +32,7 @@ namespace InventoryAPI.Data
         public DbSet<Employee> Employees { get; set; }
         public DbSet<Customer> Customers { get; set; }
         public DbSet<Profile> Profiles { get; set; }
+        public DbSet<Company> Companies { get; set; }
 
         // 4. Transacciones y Finanzas
         public DbSet<Movement> Movements { get; set; }

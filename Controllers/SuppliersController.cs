@@ -37,7 +37,10 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetSuppliers()
         {
-            var suppliers = await _supplierService.GetAllAsync();
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            var suppliers = await _supplierService.GetAllByCompanyIdAsync(companyId);
             return Ok(suppliers);
         }
 
@@ -88,17 +91,13 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> PostSupplier([FromBody] Supplier supplier)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                supplier.CompanyId = int.Parse(companyIdHeader!);
 
             var success = await _supplierService.CreateAsync(supplier);
-            if (!success)
-            {
-                return BadRequest("No se pudo crear el proveedor.");
-            }
-
+            if (!success) return BadRequest("No se pudo crear.");
             return CreatedAtAction(nameof(GetSupplier), new { id = supplier.Id }, supplier);
         }
 

@@ -15,8 +15,13 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                // Cambiado de GetAllArticlesAsync a GetAllAsync
-                var articles = await _articleService.GetAllAsync();
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                {
+                    return BadRequest(new { error = "Acceso denegado: Falta el identificador de sucursal." });
+                }
+                int companyId = int.Parse(companyIdHeader!);
+                var articles = await _articleService.GetAllByCompanyIdAsync(companyId);
+
                 return Ok(articles);
             }
             catch (Exception ex)
@@ -66,10 +71,13 @@ namespace InventoryAPI.Controllers
         public async Task<IActionResult> PostArticle([FromBody] Article article)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
-
             try
             {
-                // Cambiado de CreateArticleAsync a CreateAsync (ejecutará tu transacción personalizada en el servicio)
+                if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                {
+                    article.CompanyId = int.Parse(companyIdHeader!);
+                }
+
                 var success = await _articleService.CreateAsync(article);
                 if (!success) return BadRequest("No se pudo crear el artículo.");
 
