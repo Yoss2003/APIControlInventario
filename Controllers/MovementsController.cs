@@ -14,7 +14,10 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetMovements()
         {
-            var movements = await _movementService.GetAllAsync();
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            var movements = await _movementService.GetAllByCompanyIdAsync(companyId);
             return Ok(movements);
         }
 
@@ -36,17 +39,13 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> PostMovement([FromBody] Movement movement)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                movement.CompanyId = int.Parse(companyIdHeader!);
 
             var success = await _movementService.CreateAsync(movement);
-            if (!success)
-            {
-                return BadRequest("No se pudo crear el movimiento.");
-            }
-
+            if (!success) return BadRequest("No se pudo crear.");
             return CreatedAtAction(nameof(GetMovement), new { id = movement.Id }, movement);
         }
     }

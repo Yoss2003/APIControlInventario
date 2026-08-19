@@ -21,14 +21,13 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                // Usamos el método genérico GetAllAsync() heredado del WorkContainer
-                var accountReceivables = await _accountReceivableService.GetAllAsync();
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal (X-Company-Id).");
+                int companyId = int.Parse(companyIdHeader!);
+
+                var accountReceivables = await _accountReceivableService.GetAllByCompanyIdAsync(companyId);
                 return Ok(accountReceivables);
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al recuperar las cuentas por cobrar: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
         // GET: api/AccountReceivables/5
@@ -57,26 +56,17 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> PostAccountReceivable([FromBody] AccountReceivable accountReceivable)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
+            if (!ModelState.IsValid) return BadRequest(ModelState);
             try
             {
-                // Usamos CreateAsync()
-                var success = await _accountReceivableService.CreateAsync(accountReceivable);
-                if (!success)
-                {
-                    return BadRequest("No se pudo crear la cuenta por cobrar. Verifique los datos enviados.");
-                }
+                if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                    accountReceivable.CompanyId = int.Parse(companyIdHeader!);
 
+                var success = await _accountReceivableService.CreateAsync(accountReceivable);
+                if (!success) return BadRequest("No se pudo crear.");
                 return CreatedAtAction(nameof(GetAccountReceivable), new { id = accountReceivable.Id }, accountReceivable);
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al crear la cuenta por cobrar: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
         // PUT: api/AccountReceivables/5

@@ -1,3 +1,4 @@
+using ControlInventario.Shared.Models;
 using InventoryAPI.Data;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
@@ -38,9 +39,13 @@ builder.Services.AddScoped<IBrandService, BrandService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICurrencyService, CurrencyService>();
 builder.Services.AddScoped<ICustomerService, CustomerService>();
+builder.Services.AddScoped<IDateFormatService, DateFormatService>();
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 builder.Services.AddScoped<IExportRouteService, ExportRouteService>();
-builder.Services.AddScoped<IExchangeRateService, ExchangeRateService>();
+
+builder.Services.AddHttpClient<IExchangeRateService, ExchangeRateService>();
+builder.Services.AddHttpClient<ISupplierService, SupplierService>();
+
 builder.Services.AddScoped<IHistoryLogService, HistoryLogService>();
 builder.Services.AddScoped<IInstallmentPaymentService, InstallmentPaymentService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
@@ -56,19 +61,22 @@ builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<ISaleService, SaleService>();
 builder.Services.AddScoped<ISalesModeService, SalesModeService>();
 builder.Services.AddScoped<ISecurityQuestionService, SecurityQuestionService>();
-builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IThemeService, ThemeService>();
 builder.Services.AddScoped<ITimeZoneItemService, TimeZoneItemService>();
 builder.Services.AddScoped<IUserService, UserService>();
 
+builder.Services.AddScoped<IRolePermissionService, RolePermissionService>();
+builder.Services.AddScoped<ICategoryMeasurementUnitService, CategoryMeasurementUnitService>();
+builder.Services.AddScoped<ISharedInventoryService, SharedInventoryService>();
+builder.Services.AddScoped<ISaleDetailService, SaleDetailService>();
+builder.Services.AddScoped<ICompanyService, CompanyService>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
+app.UseDeveloperExceptionPage();
 
 app.UseStaticFiles();
 
@@ -77,5 +85,49 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var context = services.GetRequiredService<AppDbContext>();
+        context.Database.Migrate(); // Aplica las tablas
+
+        // 🚀 LA MAGIA DEL SEEDING: Si no hay empresas, creamos la primera
+        if (!context.Companies.Any())
+        {
+            var defaultCompany = new Company
+            {
+                BusinessName = "Administración Central",
+                Ruc = "00000000000",
+                LogoUrl = "dotnet_bot.png",
+                PrimaryColorHex = "#8A2BE2",
+                IsActive = true,
+                RegistrationDate = DateTime.Now
+            };
+
+            context.Companies.Add(defaultCompany);
+            context.SaveChanges();
+
+            int SUPER_ADMIN_ROLE_ID = 1;
+
+            var superAdmins = context.Users
+                .Where(u => u.CompanyId == null && u.RoleId == SUPER_ADMIN_ROLE_ID)
+                .ToList();
+
+            foreach (var admin in superAdmins)
+            {
+                admin.CompanyId = defaultCompany.Id;
+            }
+            context.SaveChanges();
+        }
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Ocurrió un error al aplicar las migraciones a la base de datos.");
+    }
+}
 
 app.Run();

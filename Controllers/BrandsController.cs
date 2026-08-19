@@ -16,13 +16,13 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                var brands = await _brandService.GetAllAsync();
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal (X-Company-Id).");
+                int companyId = int.Parse(companyIdHeader!);
+
+                var brands = await _brandService.GetAllByCompanyIdAsync(companyId);
                 return Ok(brands);
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al recuperar las marcas: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
         // GET: api/Brands/5
@@ -84,25 +84,17 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> PostBrand([FromBody] Brand brand)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
+            if (!ModelState.IsValid) return BadRequest(ModelState);
             try
             {
-                var success = await _brandService.CreateAsync(brand);
-                if (!success)
-                {
-                    return BadRequest("No se pudo crear la marca.");
-                }
+                if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                    brand.CompanyId = int.Parse(companyIdHeader!);
 
+                var success = await _brandService.CreateAsync(brand);
+                if (!success) return BadRequest("No se pudo crear.");
                 return CreatedAtAction(nameof(GetBrand), new { id = brand.Id }, brand);
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al crear la marca: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
         // DELETE: api/Brands/5

@@ -1,5 +1,5 @@
 ﻿using ControlInventario.Shared.Models;
-using InventoryAPI.Models.DTO;
+using ControlInventario.Shared.Models.DTO;
 using InventoryAPI.Repositories.IRepositories;
 
 namespace InventoryAPI.Services.IServices

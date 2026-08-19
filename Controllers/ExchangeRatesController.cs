@@ -11,7 +11,21 @@ namespace InventoryAPI.Controllers
     {
         private readonly IExchangeRateService _exchangeRateService = exchangeRateService;
 
-        // GET: api/ExchangeRates/today/USD
+        [HttpGet]
+        public async Task<IActionResult> GetExchangeRates()
+        {
+            try
+            {
+                var rates = await _exchangeRateService.GetAllAsync();
+                return Ok(rates);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error interno: {ex.Message}");
+            }
+        }
+
+
         [HttpGet("today/{currency?}")]
         public async Task<IActionResult> GetTodayExchangeRate(string? currency)
         {

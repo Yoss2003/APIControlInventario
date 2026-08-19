@@ -16,13 +16,13 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                var payments = await _installmentPaymentService.GetAllAsync();
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+                int companyId = int.Parse(companyIdHeader!);
+
+                var payments = await _installmentPaymentService.GetAllByCompanyIdAsync(companyId);
                 return Ok(payments);
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al recuperar los pagos en cuotas: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
         // GET: api/InstallmentPayments/5
@@ -86,25 +86,17 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> PostInstallmentPayment([FromBody] InstallmentPayment installmentPayment)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
+            if (!ModelState.IsValid) return BadRequest(ModelState);
             try
             {
-                var success = await _installmentPaymentService.CreateAsync(installmentPayment);
-                if (!success)
-                {
-                    return BadRequest("No se pudo crear el pago en cuotas.");
-                }
+                if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                    installmentPayment.CompanyId = int.Parse(companyIdHeader!);
 
+                var success = await _installmentPaymentService.CreateAsync(installmentPayment);
+                if (!success) return BadRequest("No se pudo crear.");
                 return CreatedAtAction(nameof(GetInstallmentPayment), new { id = installmentPayment.Id }, installmentPayment);
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al crear el pago en cuotas: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
         // DELETE: api/InstallmentPayments/5

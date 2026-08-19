@@ -13,7 +13,10 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetNotifications()
         {
-            var notifications = await _notificationService.GetAllAsync();
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            var notifications = await _notificationService.GetAllByCompanyIdAsync(companyId);
             return Ok(notifications);
         }
 

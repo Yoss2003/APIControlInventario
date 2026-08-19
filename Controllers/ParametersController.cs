@@ -14,7 +14,10 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetParameters()
         {
-            var parameters = await _parametersService.GetAllAsync();
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            var parameters = await _parametersService.GetAllByCompanyIdAsync(companyId);
             return Ok(parameters);
         }
 
@@ -65,17 +68,13 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> PostParameter([FromBody] Parameters parameter)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                parameter.CompanyId = int.Parse(companyIdHeader!);
 
             var success = await _parametersService.CreateAsync(parameter);
-            if (!success)
-            {
-                return BadRequest("No se pudo crear el parámetro.");
-            }
-
+            if (!success) return BadRequest("No se pudo crear.");
             return CreatedAtAction(nameof(GetParameter), new { id = parameter.Id }, parameter);
         }
 
