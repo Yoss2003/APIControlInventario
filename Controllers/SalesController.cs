@@ -30,7 +30,15 @@ namespace InventoryAPI.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
-                nuevaVenta.CompanyId = int.Parse(companyIdHeader!);
+            {
+                int companyId = int.Parse(companyIdHeader!);
+                nuevaVenta.CompanyId = companyId;
+
+                foreach (var detail in nuevaVenta.SaleDetails)
+                {
+                    detail.CompanyId = companyId;
+                }
+            }
 
             var result = await _saleService.ProcessSaleAsync(nuevaVenta);
             if (!result.Success)
