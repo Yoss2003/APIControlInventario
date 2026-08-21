@@ -15,52 +15,42 @@ namespace InventoryAPI.Controllers
             _accountReceivableService = accountReceivableService;
         }
 
-        // GET: api/AccountReceivables
         [HttpGet]
         public async Task<IActionResult> GetAccountsReceivables()
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal (X-Company-Id).");
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
                 int companyId = int.Parse(companyIdHeader!);
-
-                var accountReceivables = await _accountReceivableService.GetAllByCompanyIdAsync(companyId);
-                return Ok(accountReceivables);
+                return Ok(await _accountReceivableService.GetAllByCompanyIdAsync(companyId));
             }
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
-        // GET: api/AccountReceivables/5
         [HttpGet("{id}")]
         public async Task<IActionResult> GetAccountReceivable(int id)
         {
             try
             {
-                // Usamos GetByIdAsync()
-                var accountReceivable = await _accountReceivableService.GetByIdAsync(id);
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+                int companyId = int.Parse(companyIdHeader!);
 
-                if (accountReceivable == null)
-                {
-                    return NotFound($"No se encontró la cuenta por cobrar con ID {id}.");
-                }
+                var accountReceivable = await _accountReceivableService.GetByIdAsync(id);
+                if (accountReceivable == null || accountReceivable.CompanyId != companyId) return NotFound();
 
                 return Ok(accountReceivable);
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al recuperar la cuenta por cobrar: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
-        // POST: api/AccountReceivables
         [HttpPost]
         public async Task<IActionResult> PostAccountReceivable([FromBody] AccountReceivable accountReceivable)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
             try
             {
-                if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
-                    accountReceivable.CompanyId = int.Parse(companyIdHeader!);
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+                accountReceivable.CompanyId = int.Parse(companyIdHeader!);
 
                 var success = await _accountReceivableService.CreateAsync(accountReceivable);
                 if (!success) return BadRequest("No se pudo crear.");
@@ -69,68 +59,47 @@ namespace InventoryAPI.Controllers
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
-        // PUT: api/AccountReceivables/5
         [HttpPut("{id}")]
         public async Task<IActionResult> PutAccountReceivable(int id, [FromBody] AccountReceivable accountReceivable)
         {
-            if (id != accountReceivable.Id)
-            {
-                return BadRequest("El ID de la URL no coincide con el ID de la cuenta por cobrar proporcionada.");
-            }
+            if (id != accountReceivable.Id) return BadRequest("El ID no coincide.");
+            if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            accountReceivable.CompanyId = companyId;
 
             try
             {
                 var existingAccountReceivable = await _accountReceivableService.GetByIdAsync(id);
-                if (existingAccountReceivable == null)
-                {
-                    return NotFound($"No se encontró la cuenta por cobrar con ID {id} para actualizar.");
-                }
+                if (existingAccountReceivable == null || existingAccountReceivable.CompanyId != companyId) return NotFound();
 
-                // Usamos UpdateAsync()
                 var success = await _accountReceivableService.UpdateAsync(accountReceivable);
-                if (!success)
-                {
-                    return BadRequest("No se pudo actualizar la cuenta por cobrar.");
-                }
+                if (!success) return BadRequest("No se pudo actualizar.");
 
                 return NoContent();
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al actualizar la cuenta por cobrar: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
-        // DELETE: api/AccountReceivables/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteAccountReceivable(int id)
         {
             try
             {
-                var existingAccountReceivable = await _accountReceivableService.GetByIdAsync(id);
-                if (existingAccountReceivable == null)
-                {
-                    return NotFound($"No se encontró la cuenta por cobrar con ID {id} para eliminar.");
-                }
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+                int companyId = int.Parse(companyIdHeader!);
 
-                // Usamos DeleteAsync()
+                var existingAccountReceivable = await _accountReceivableService.GetByIdAsync(id);
+                if (existingAccountReceivable == null || existingAccountReceivable.CompanyId != companyId) return NotFound();
+
                 var success = await _accountReceivableService.DeleteAsync(id);
-                if (!success)
-                {
-                    return BadRequest("No se pudo eliminar la cuenta por cobrar.");
-                }
+                if (!success) return BadRequest("No se pudo eliminar.");
 
                 return NoContent();
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al eliminar la cuenta por cobrar: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
     }
 }

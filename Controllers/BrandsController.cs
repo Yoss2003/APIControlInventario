@@ -10,117 +10,71 @@ namespace InventoryAPI.Controllers
     {
         private readonly IBrandService _brandService = brandService;
 
-        // GET: api/Brands
         [HttpGet]
         public async Task<IActionResult> GetBrands()
         {
-            try
-            {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal (X-Company-Id).");
-                int companyId = int.Parse(companyIdHeader!);
-
-                var brands = await _brandService.GetAllByCompanyIdAsync(companyId);
-                return Ok(brands);
-            }
-            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+            return Ok(await _brandService.GetAllByCompanyIdAsync(companyId));
         }
 
-        // GET: api/Brands/5
         [HttpGet("{id}")]
         public async Task<IActionResult> GetBrand(int id)
         {
-            try
-            {
-                var brand = await _brandService.GetByIdAsync(id);
-                if (brand == null)
-                {
-                    return NotFound($"No se encontró la marca con ID {id}.");
-                }
-                return Ok(brand);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al recuperar la marca: {ex.Message}");
-            }
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            var brand = await _brandService.GetByIdAsync(id);
+            if (brand == null || brand.CompanyId != companyId) return NotFound($"No se encontró la marca.");
+
+            return Ok(brand);
         }
 
-        // PUT: api/Brands/5
         [HttpPut("{id}")]
         public async Task<IActionResult> PutBrand(int id, [FromBody] Brand brand)
         {
-            if (id != brand.Id)
-            {
-                return BadRequest("El ID de la URL no coincide con el ID de la marca proporcionada.");
-            }
+            if (id != brand.Id) return BadRequest("El ID no coincide.");
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            int companyId = int.Parse(companyIdHeader!);
+            brand.CompanyId = companyId;
 
-            try
-            {
-                var existingBrand = await _brandService.GetByIdAsync(id);
-                if (existingBrand == null)
-                {
-                    return NotFound($"No se encontró la marca con ID {id} para actualizar.");
-                }
+            var existingBrand = await _brandService.GetByIdAsync(id);
+            if (existingBrand == null || existingBrand.CompanyId != companyId) return NotFound("Marca no encontrada.");
 
-                var success = await _brandService.UpdateAsync(brand);
-                if (!success)
-                {
-                    return BadRequest("No se pudo actualizar la marca.");
-                }
+            var success = await _brandService.UpdateAsync(brand);
+            if (!success) return BadRequest("No se pudo actualizar.");
 
-                return NoContent();
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al actualizar la marca: {ex.Message}");
-            }
+            return NoContent();
         }
 
-        // POST: api/Brands
         [HttpPost]
         public async Task<IActionResult> PostBrand([FromBody] Brand brand)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
-            try
-            {
-                if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
-                    brand.CompanyId = int.Parse(companyIdHeader!);
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
-                var success = await _brandService.CreateAsync(brand);
-                if (!success) return BadRequest("No se pudo crear.");
-                return CreatedAtAction(nameof(GetBrand), new { id = brand.Id }, brand);
-            }
-            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
+            brand.CompanyId = int.Parse(companyIdHeader!);
+            var success = await _brandService.CreateAsync(brand);
+            if (!success) return BadRequest("No se pudo crear.");
+
+            return CreatedAtAction(nameof(GetBrand), new { id = brand.Id }, brand);
         }
 
-        // DELETE: api/Brands/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteBrand(int id)
         {
-            try
-            {
-                var existingBrand = await _brandService.GetByIdAsync(id);
-                if (existingBrand == null)
-                {
-                    return NotFound($"No se encontró la marca con ID {id} para eliminar.");
-                }
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
 
-                var success = await _brandService.DeleteAsync(id);
-                if (!success)
-                {
-                    return BadRequest("No se pudo eliminar la marca.");
-                }
+            var existingBrand = await _brandService.GetByIdAsync(id);
+            if (existingBrand == null || existingBrand.CompanyId != companyId) return NotFound("Marca no encontrada.");
 
-                return NoContent();
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al eliminar la marca: {ex.Message}");
-            }
+            var success = await _brandService.DeleteAsync(id);
+            if (!success) return BadRequest("No se pudo eliminar la marca.");
+
+            return NoContent();
         }
     }
 }

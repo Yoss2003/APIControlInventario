@@ -10,117 +10,71 @@ namespace InventoryAPI.Controllers
     {
         private readonly ICategoryService _categoryService = categoryService;
 
-        // GET: api/Categories
         [HttpGet]
         public async Task<IActionResult> GetCategories()
         {
-            try
-            {
-                if(!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
-                    return BadRequest("Falta indicar la sucursal (X-Company-Id).");
-
-                int companyId = int.Parse(companyIdHeader!);
-                var categories = await _categoryService.GetAllByCompanyIdAsync(companyId);
-                return Ok(categories);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al recuperar las categorías: {ex.Message}");
-            }
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+            return Ok(await _categoryService.GetAllByCompanyIdAsync(companyId));
         }
 
-        // GET: api/Categories/5
         [HttpGet("{id}")]
         public async Task<IActionResult> GetCategory(int id)
         {
-            try
-            {
-                var category = await _categoryService.GetByIdAsync(id);
-                if (category == null)
-                {
-                    return NotFound($"No se encontró la categoría con ID {id}.");
-                }
-                return Ok(category);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al recuperar la categoría: {ex.Message}");
-            }
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
+
+            var category = await _categoryService.GetByIdAsync(id);
+            if (category == null || category.CompanyId != companyId) return NotFound();
+
+            return Ok(category);
         }
 
-        // PUT: api/Categories/5
         [HttpPut("{id}")]
         public async Task<IActionResult> PutCategory(int id, [FromBody] Category category)
         {
-            if (id != category.Id)
-            {
-                return BadRequest("El ID de la URL no coincide con el ID de la categoría proporcionada.");
-            }
+            if (id != category.Id) return BadRequest("El ID no coincide.");
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            int companyId = int.Parse(companyIdHeader!);
+            category.CompanyId = companyId;
 
-            try
-            {
-                var result = await _categoryService.UpdateCategoryAsync(id, category);
-                if (!result.Success)
-                {
-                    return BadRequest(new { error = result.Message });
-                }
+            var existingCategory = await _categoryService.GetByIdAsync(id);
+            if (existingCategory == null || existingCategory.CompanyId != companyId) return NotFound("Categoría no encontrada.");
 
-                return NoContent();
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al actualizar la categoría: {ex.Message}");
-            }
+            var result = await _categoryService.UpdateCategoryAsync(id, category);
+            if (!result.Success) return BadRequest(new { error = result.Message });
+
+            return NoContent();
         }
 
-        // POST: api/Categories
         [HttpPost]
         public async Task<IActionResult> PostCategory([FromBody] Category category)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
-            try
-            {
-                var result = await _categoryService.CreateCategoryAsync(category);
-                if (!result.Success)
-                {
-                    return BadRequest(new { error = result.Message });
-                }
+            category.CompanyId = int.Parse(companyIdHeader!);
+            var result = await _categoryService.CreateCategoryAsync(category);
+            if (!result.Success) return BadRequest(new { error = result.Message });
 
-                return CreatedAtAction(nameof(GetCategory), new { id = category.Id }, category);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al crear la categoría: {ex.Message}");
-            }
+            return CreatedAtAction(nameof(GetCategory), new { id = category.Id }, category);
         }
 
-        // DELETE: api/Categories/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteCategory(int id)
         {
-            try
-            {
-                var result = await _categoryService.DeleteCategoryAsync(id);
-                if (!result.Success)
-                {
-                    return BadRequest(new { error = result.Message });
-                }
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
 
-                return NoContent();
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al eliminar la categoría: {ex.Message}");
-            }
+            var existingCategory = await _categoryService.GetByIdAsync(id);
+            if (existingCategory == null || existingCategory.CompanyId != companyId) return NotFound();
+
+            var result = await _categoryService.DeleteCategoryAsync(id);
+            if (!result.Success) return BadRequest(new { error = result.Message });
+
+            return NoContent();
         }
     }
 }

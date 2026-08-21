@@ -10,54 +10,46 @@ namespace InventoryAPI.Controllers
     {
         private readonly IHistoryLogService _historyLogService = historyLogService;
 
-        // GET: api/HistoryLogs
         [HttpGet]
         public async Task<IActionResult> GetHistoryLogs()
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal (X-Company-Id).");
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
                 int companyId = int.Parse(companyIdHeader!);
-
-                var historyLogs = await _historyLogService.GetAllByCompanyIdAsync(companyId);
-                return Ok(historyLogs);
+                return Ok(await _historyLogService.GetAllByCompanyIdAsync(companyId));
             }
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
-        // GET: api/HistoryLogs/5
         [HttpGet("{id}")]
         public async Task<IActionResult> GetHistoryLog(int id)
         {
             try
             {
-                var historyLog = await _historyLogService.GetByIdAsync(id);
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+                int companyId = int.Parse(companyIdHeader!);
 
-                if (historyLog == null)
-                {
-                    return NotFound($"No se encontró el registro de historial con ID {id}.");
-                }
+                var historyLog = await _historyLogService.GetByIdAsync(id);
+                if (historyLog == null || historyLog.CompanyId != companyId) return NotFound();
 
                 return Ok(historyLog);
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error interno del servidor al recuperar el registro de historial: {ex.Message}");
-            }
+            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
-        // POST: api/HistoryLogs
         [HttpPost]
         public async Task<IActionResult> PostHistoryLog([FromBody] HistoryLog historyLog)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
             try
             {
-                if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
-                    historyLog.CompanyId = int.Parse(companyIdHeader!);
+                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+                historyLog.CompanyId = int.Parse(companyIdHeader!);
 
                 var success = await _historyLogService.CreateAsync(historyLog);
                 if (!success) return BadRequest("No se pudo crear.");
+
                 return CreatedAtAction(nameof(GetHistoryLog), new { id = historyLog.Id }, historyLog);
             }
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }

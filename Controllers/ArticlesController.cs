@@ -13,38 +13,21 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetArticles()
         {
-            try
-            {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
-                {
-                    return BadRequest(new { error = "Acceso denegado: Falta el identificador de sucursal." });
-                }
-                int companyId = int.Parse(companyIdHeader!);
-                var articles = await _articleService.GetAllByCompanyIdAsync(companyId);
-
-                return Ok(articles);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { error = "Error al obtener los artículos", detalle = ex.Message });
-            }
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest(new { error = "Falta el identificador de sucursal." });
+            int companyId = int.Parse(companyIdHeader!);
+            return Ok(await _articleService.GetAllByCompanyIdAsync(companyId));
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetArticle(int id)
         {
-            try
-            {
-                // Cambiado de GetArticleByIdAsync a GetByIdAsync
-                var article = await _articleService.GetByIdAsync(id);
-                if (article == null) return NotFound();
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
 
-                return Ok(article);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { error = "Error al obtener el artículo", detalle = ex.Message });
-            }
+            var article = await _articleService.GetByIdAsync(id);
+            if (article == null || article.CompanyId != companyId) return NotFound();
+
+            return Ok(article);
         }
 
         [HttpPut("{id}")]
@@ -52,103 +35,84 @@ namespace InventoryAPI.Controllers
         {
             if (id != article.Id) return BadRequest();
             if (!ModelState.IsValid) return BadRequest(ModelState);
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
-            try
+            int companyId = int.Parse(companyIdHeader!);
+            article.CompanyId = companyId;
+
+            var existingArticle = await _articleService.GetByIdAsync(id);
+            if (existingArticle == null || existingArticle.CompanyId != companyId)
+                return NotFound(new { error = "El artículo no existe o no pertenece a tu sucursal." });
+
+            foreach (var property in typeof(Article).GetProperties())
             {
-                var success = await _articleService.UpdateAsync(article);
-
-                if (!success) return NotFound(new { error = "El artículo no existe o no se pudo actualizar." });
-
-                return NoContent();
+                if (property.Name != "Id" &&
+                    property.Name != "CompanyId" &&
+                    property.Name != "RegistrationDate" &&
+                    property.Name != "IsActive" &&
+                    property.Name != "IsSynced" &&
+                    property.CanWrite)
+                {
+                    var newValue = property.GetValue(article);
+                    property.SetValue(existingArticle, newValue);
+                }
             }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { error = "Error al actualizar el artículo", detalle = ex.Message });
-            }
+
+            var success = await _articleService.UpdateAsync(existingArticle);
+
+            if (!success) return BadRequest(new { error = "No se pudo actualizar." });
+
+            return NoContent();
         }
 
         [HttpPost]
         public async Task<IActionResult> PostArticle([FromBody] Article article)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
-            try
-            {
-                if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
-                {
-                    article.CompanyId = int.Parse(companyIdHeader!);
-                }
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
-                var success = await _articleService.CreateAsync(article);
-                if (!success) return BadRequest("No se pudo crear el artículo.");
+            article.CompanyId = int.Parse(companyIdHeader!);
 
-                return CreatedAtAction(nameof(GetArticle), new { id = article.Id }, article);
-            }
-            catch (Exception ex)
-            {
-                var innerMessage = ex.GetBaseException().Message;
-                return StatusCode(500, new { error = "Error crítico en Base de Datos", detalle = innerMessage });
-            }
+            var success = await _articleService.CreateAsync(article);
+            if (!success) return BadRequest("No se pudo crear el artículo.");
+
+            return CreatedAtAction(nameof(GetArticle), new { id = article.Id }, article);
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteArticle(int id)
         {
-            try
-            {
-                var existingArticle = await _articleService.GetByIdAsync(id);
-                if (existingArticle == null) return NotFound();
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
 
-                // Cambiado de DeleteArticleAsync a DeleteAsync
-                var success = await _articleService.DeleteAsync(id);
-                if (!success) return BadRequest("No se pudo eliminar el artículo.");
+            var existingArticle = await _articleService.GetByIdAsync(id);
+            if (existingArticle == null || existingArticle.CompanyId != companyId) return NotFound();
 
-                return NoContent();
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { error = "Error al eliminar el artículo", detalle = ex.Message });
-            }
+            var success = await _articleService.DeleteAsync(id);
+            if (!success) return BadRequest("No se pudo eliminar el artículo.");
+
+            return NoContent();
         }
 
         [HttpGet("count/inventory/{inventoryId}")]
         public async Task<IActionResult> GetArticleCount(int inventoryId)
         {
-            try
-            {
-                // Este método es personalizado tuyo, se mantiene intacto
-                var totalUnidades = await _articleService.GetArticleCountByInventoryIdAsync(inventoryId);
-                return Ok(totalUnidades);
-            }
-            catch (Exception)
-            {
-                return Ok(0);
-            }
+            // Nota: Si un inventario pertenece a una empresa, este conteo es seguro.
+            try { return Ok(await _articleService.GetArticleCountByInventoryIdAsync(inventoryId)); }
+            catch { return Ok(0); }
         }
 
         [HttpGet("barcode/{barcode}")]
         public async Task<IActionResult> GetArticleByBarcode(string barcode)
         {
-            if (string.IsNullOrWhiteSpace(barcode))
-            {
-                return BadRequest(new { error = "El código de barras no puede estar vacío." });
-            }
+            if (string.IsNullOrWhiteSpace(barcode)) return BadRequest(new { error = "El código de barras no puede estar vacío." });
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = int.Parse(companyIdHeader!);
 
-            try
-            {
-                // Este método también es personalizado y se mantiene intacto
-                var articulo = await _articleService.GetArticleByBarcodeAsync(barcode);
+            var articulo = await _articleService.GetArticleByBarcodeAsync(barcode);
+            if (articulo == null || articulo.CompanyId != companyId) return NotFound(new { error = $"El código {barcode} no está registrado en tu sucursal." });
 
-                if (articulo == null)
-                {
-                    return NotFound(new { error = $"El código {barcode} no está registrado." });
-                }
-
-                return Ok(articulo);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { error = "Error al buscar por código de barras", detalle = ex.Message });
-            }
+            return Ok(articulo);
         }
     }
 }

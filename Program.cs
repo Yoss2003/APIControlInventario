@@ -70,6 +70,7 @@ builder.Services.AddScoped<ICategoryMeasurementUnitService, CategoryMeasurementU
 builder.Services.AddScoped<ISharedInventoryService, SharedInventoryService>();
 builder.Services.AddScoped<ISaleDetailService, SaleDetailService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
+builder.Services.AddScoped<IEmployeePermissionService, EmployeePermissionService>();
 
 var app = builder.Build();
 
