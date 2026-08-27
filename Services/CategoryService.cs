@@ -62,12 +62,28 @@ namespace InventoryAPI.Services
             var categoriaExistente = await _workFlow.Repository<Category>().GetByIdAsync(id);
             if (categoriaExistente == null) return (false, "Categoría no encontrada.");
 
-            _workFlow.Repository<Category>().Detach(categoriaExistente);
-
             await _workFlow.BeginTransactionAsync();
             try
             {
-                _workFlow.Repository<Category>().Update(category);
+                categoriaExistente.Name = category.Name;
+                categoriaExistente.Description = category.Description;
+                categoriaExistente.ParentCategoryId = category.ParentCategoryId;
+                categoriaExistente.TrackingMode = category.TrackingMode;
+                categoriaExistente.NamingMethod = category.NamingMethod;
+                categoriaExistente.IsReturnable = category.IsReturnable;
+
+                categoriaExistente.IsActive = category.IsActive;
+                categoriaExistente.Label1 = category.Label1;
+                categoriaExistente.Label2 = category.Label2;
+                categoriaExistente.Label3 = category.Label3;
+                categoriaExistente.Label4 = category.Label4;
+                categoriaExistente.Label5 = category.Label5;
+                categoriaExistente.Label6 = category.Label6;
+
+                categoriaExistente.ModificationDate = DateTime.Now;
+                categoriaExistente.ModificationUser = category.ModificationUser ?? "Admin";
+
+                _workFlow.Repository<Category>().Update(categoriaExistente);
 
                 if (category.SelectedUnitIds != null)
                 {
@@ -107,7 +123,7 @@ namespace InventoryAPI.Services
             if (category == null) return (false, "Categoría no encontrada.");
 
             var subcategories = await _workFlow.Repository<Category>()
-                .FindAsync(c => c.ParentCategoryId == id);
+                .FindAsync(c => c.ParentCategoryId == id && c.IsActive);
             if (subcategories.Any())
             {
                 return (false, "No puedes eliminar una categoría padre que aún contiene subcategorías.");
@@ -120,7 +136,10 @@ namespace InventoryAPI.Services
                 return (false, "No puedes eliminar esta categoría porque existen artículos registrados en ella.");
             }
 
-            _workFlow.Repository<Category>().Delete(category);
+            category.IsActive = false;
+            category.DeletionDate = DateTime.Now;
+
+            _workFlow.Repository<Category>().Update(category);
             await _workFlow.CompleteAsync();
 
             return (true, "Categoría eliminada con éxito.");
