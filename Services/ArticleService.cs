@@ -24,7 +24,8 @@ namespace InventoryAPI.Services
                     MovementDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                     Observation = "Registro inicial del producto en almacén",
                     Amount = (double)article.Stock,
-                    SalePrice = (double)(article.SalePrice ?? 0m)
+                    SalePrice = (double)(article.SalePrice ?? 0m),
+                    CompanyId = article.CompanyId
                 };
                 await _workFlow.Repository<Movement>().AddAsync(nuevoMovimiento);
 
@@ -38,7 +39,8 @@ namespace InventoryAPI.Services
                     Username = nombreUsuario,
                     ModuleName = "Inventario",
                     ActionName = "Creación",
-                    Detail = $"Producto \"{article.Name}\" agregado por \"{nombreUsuario}\" el \"{DateTime.Now:dd/MM/yyyy HH:mm}\""
+                    Detail = $"Producto \"{article.Name}\" agregado por \"{nombreUsuario}\" el \"{DateTime.Now:dd/MM/yyyy HH:mm}\"",
+                    CompanyId = article.CompanyId
                 };
                 await _workFlow.Repository<HistoryLog>().AddAsync(nuevoLog);
 
