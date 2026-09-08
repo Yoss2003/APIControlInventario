@@ -29,11 +29,23 @@ namespace InventoryAPI.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
+            int companyId;
             if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
             {
-                int companyId = int.Parse(companyIdHeader!);
-                nuevaVenta.CompanyId = companyId;
+                companyId = int.Parse(companyIdHeader!);
+            }
+            else if (nuevaVenta.CompanyId > 0)
+            {
+                companyId = nuevaVenta.CompanyId;
+            }
+            else
+            {
+                return BadRequest(new { Message = "Falta indicar la empresa (X-Company-Id)." });
+            }
 
+            nuevaVenta.CompanyId = companyId;
+            if (nuevaVenta.SaleDetails != null)
+            {
                 foreach (var detail in nuevaVenta.SaleDetails)
                 {
                     detail.CompanyId = companyId;
@@ -46,7 +58,7 @@ namespace InventoryAPI.Controllers
                 if (result.Message.Contains("crítico")) return StatusCode(500, new { Message = result.Message });
                 return BadRequest(new { Message = result.Message });
             }
-            return Ok(new { Message = result.Message });
+            return Ok(new { result.Message });
         }
     }
 }
