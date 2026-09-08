@@ -114,5 +114,57 @@ namespace InventoryAPI.Controllers
 
             return Ok(articulo);
         }
+
+        [HttpPost("AddDetail")]
+        public async Task<IActionResult> PostArticleDetail([FromBody] ArticleDetails detail)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest(new { error = "Falta indicar la sucursal." });
+
+            int companyId = int.Parse(companyIdHeader!);
+            var padre = await _articleService.GetByIdAsync(detail.ArticleId);
+
+            if (padre == null || padre.CompanyId != companyId)
+                return NotFound(new { error = "El artículo principal no existe o no pertenece a tu sucursal." });
+
+            var result = await _articleService.AddDetailAsync(detail);
+
+            if (!result.Success)
+                return BadRequest(new { error = $"Error BD: {result.ErrorMessage}" });
+
+            // 🚀 LA MAGIA: Devolvemos el newId directamente desde la base de datos
+            return Ok(new { message = "Número de serie registrado correctamente.", newId = detail.Id });
+        }
+
+        [HttpPut("UpdateDetail/{id}")]
+        public async Task<IActionResult> UpdateDetail(int id, [FromBody] ArticleDetails detail)
+        {
+            if (id != detail.Id) return BadRequest();
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
+
+            var success = await _articleService.UpdateDetailAsync(detail);
+
+            if (!success) return BadRequest(new { error = "No se pudo actualizar el número de serie." });
+
+            return Ok(new { message = "Serie actualizada correctamente." });
+        }
+
+        [HttpDelete("DeleteDetail/{id}")]
+        public async Task<IActionResult> DeleteDetail(int id)
+        {
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
+
+            var success = await _articleService.DeleteDetailAsync(id);
+
+            if (!success) return BadRequest(new { error = "No se pudo dar de baja la serie." });
+
+            return Ok(new { message = "Serie dada de baja correctamente." });
+        }
     }
 }

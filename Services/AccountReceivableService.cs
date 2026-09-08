@@ -33,8 +33,8 @@ namespace InventoryAPI.Services
 
                         if (diasMoraAplicables > 0 && porcentajeMoraDiaria > 0)
                         {
-                            decimal recargoMora = ((decimal)cuenta.InstallmentAmount * (porcentajeMoraDiaria / 100m)) * diasMoraAplicables;
-                            cuenta.LateFeeAmount = (double)recargoMora;
+                            decimal recargoMora = (cuenta.InstallmentAmount * (porcentajeMoraDiaria / 100m)) * diasMoraAplicables;
+                            cuenta.LateFeeAmount = recargoMora;
                         }
                     }
                 }

@@ -46,13 +46,14 @@ namespace InventoryAPI.Services
 
                     var nuevoMovimiento = new Movement
                     {
+                        CompanyId = nuevaVenta.CompanyId,
                         ArticleId = articulo.Id,
                         EmployeeId = vendedorEmpleado.Id,
-                        ActionId = 2, // Venta
+                        ActionId = 2,
                         MovementDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                         Observation = nuevaVenta.Notes,
-                        Amount = (double)detalle.Quantity,
-                        SalePrice = (double)detalle.UnitPrice,
+                        Amount = detalle.Quantity,
+                        SalePrice = detalle.UnitPrice,
                         PaymentMethod = nuevaVenta.PaymentType.ToString(),
                         Recipient = nombreCliente
                     };
@@ -60,6 +61,7 @@ namespace InventoryAPI.Services
 
                     var nuevoLog = new HistoryLog
                     {
+                        CompanyId = nuevaVenta.CompanyId,
                         LogDate = DateTime.Now,
                         Username = nombreVendedor,
                         ModuleName = "Ventas",

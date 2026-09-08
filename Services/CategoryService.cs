@@ -80,6 +80,13 @@ namespace InventoryAPI.Services
                 categoriaExistente.Label5 = category.Label5;
                 categoriaExistente.Label6 = category.Label6;
 
+                categoriaExistente.IsUnique1 = category.IsUnique1;
+                categoriaExistente.IsUnique2 = category.IsUnique2;
+                categoriaExistente.IsUnique3 = category.IsUnique3;
+                categoriaExistente.IsUnique4 = category.IsUnique4;
+                categoriaExistente.IsUnique5 = category.IsUnique5;
+                categoriaExistente.IsUnique6 = category.IsUnique6;
+
                 categoriaExistente.ModificationDate = DateTime.Now;
                 categoriaExistente.ModificationUser = category.ModificationUser ?? "Admin";
 
