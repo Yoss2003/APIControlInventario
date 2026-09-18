@@ -16,7 +16,25 @@ namespace InventoryAPI.Services
             {
                 if (cat.CategoryMeasurementUnits != null)
                 {
-                    cat.SelectedUnitIds = cat.CategoryMeasurementUnits.Select(cmu => cmu.MeasurementUnitId).ToList();
+                    cat.SelectedUnitIds = [.. cat.CategoryMeasurementUnits.Select(cmu => cmu.MeasurementUnitId)];
+                }
+            }
+
+            return categories;
+        }
+
+        public override async Task<IEnumerable<Category>> GetAllByCompanyIdAsync(int companyId)
+        {
+            var allCategories = await _workFlow.Repository<Category>()
+                .GetAllWithIncludeAsync(c => c.CategoryMeasurementUnits!);
+
+            var categories = allCategories.Where(c => c.CompanyId == companyId).ToList();
+
+            foreach (var cat in categories)
+            {
+                if (cat.CategoryMeasurementUnits != null)
+                {
+                    cat.SelectedUnitIds = [.. cat.CategoryMeasurementUnits.Select(cmu => cmu.MeasurementUnitId)];
                 }
             }
 
@@ -33,14 +51,15 @@ namespace InventoryAPI.Services
                 await _workFlow.Repository<Category>().AddAsync(category);
                 await _workFlow.CompleteAsync();
 
-                if (category.SelectedUnitIds != null && category.SelectedUnitIds.Any())
+                if (category.SelectedUnitIds != null && category.SelectedUnitIds.Count != 0)
                 {
                     foreach (var unitId in category.SelectedUnitIds)
                     {
                         var newUnit = new CategoryMeasurementUnit
                         {
                             CategoryId = category.Id,
-                            MeasurementUnitId = unitId
+                            MeasurementUnitId = unitId,
+                            CompanyId = category.CompanyId
                         };
                         await _workFlow.Repository<CategoryMeasurementUnit>().AddAsync(newUnit);
                     }
@@ -53,7 +72,8 @@ namespace InventoryAPI.Services
             catch (Exception ex)
             {
                 await _workFlow.RollbackTransactionAsync();
-                return (false, $"Error crítico al guardar en BD: {ex.Message}");
+                string detalleReal = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return (false, $"Error de BD: {detalleReal}");
             }
         }
 
@@ -65,14 +85,16 @@ namespace InventoryAPI.Services
             await _workFlow.BeginTransactionAsync();
             try
             {
+                category.CategoryMeasurementUnits = null;
+
                 categoriaExistente.Name = category.Name;
                 categoriaExistente.Description = category.Description;
                 categoriaExistente.ParentCategoryId = category.ParentCategoryId;
                 categoriaExistente.TrackingMode = category.TrackingMode;
                 categoriaExistente.NamingMethod = category.NamingMethod;
                 categoriaExistente.IsReturnable = category.IsReturnable;
-
                 categoriaExistente.IsActive = category.IsActive;
+
                 categoriaExistente.Label1 = category.Label1;
                 categoriaExistente.Label2 = category.Label2;
                 categoriaExistente.Label3 = category.Label3;
@@ -107,7 +129,8 @@ namespace InventoryAPI.Services
                         var nuevaUnidad = new CategoryMeasurementUnit
                         {
                             CategoryId = id,
-                            MeasurementUnitId = unitId
+                            MeasurementUnitId = unitId,
+                            CompanyId = categoriaExistente.CompanyId
                         };
                         await _workFlow.Repository<CategoryMeasurementUnit>().AddAsync(nuevaUnidad);
                     }
@@ -120,11 +143,12 @@ namespace InventoryAPI.Services
             catch (Exception ex)
             {
                 await _workFlow.RollbackTransactionAsync();
+                string detalleError = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
                 return (false, $"Error crítico al actualizar en BD: {ex.Message}");
             }
         }
 
-        public async Task<(bool Success, string Message)> DeleteCategoryAsync(int id)
+        public async Task<(bool Success, string Message)> DeleteCategoryAsync(int id, string deletedBy = "Sistema")
         {
             var category = await _workFlow.Repository<Category>().GetByIdAsync(id);
             if (category == null) return (false, "Categoría no encontrada.");
@@ -145,6 +169,7 @@ namespace InventoryAPI.Services
 
             category.IsActive = false;
             category.DeletionDate = DateTime.Now;
+            category.DeletionUser = deletedBy;
 
             _workFlow.Repository<Category>().Update(category);
             await _workFlow.CompleteAsync();

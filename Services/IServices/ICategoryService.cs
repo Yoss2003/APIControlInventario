@@ -7,6 +7,6 @@ namespace InventoryAPI.Services.IServices
     {
         Task<(bool Success, string Message)> CreateCategoryAsync(Category category);
         Task<(bool Success, string Message)> UpdateCategoryAsync(int id, Category category);
-        Task<(bool Success, string Message)> DeleteCategoryAsync(int id);
+        Task<(bool Success, string Message)> DeleteCategoryAsync(int id, string deletedBy = "Sistema");
     }
 }

@@ -69,12 +69,13 @@ namespace InventoryAPI.Controllers
             if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
             int companyId = int.Parse(companyIdHeader!);
 
+            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+
             var existingParameter = await _parametersService.GetByIdAsync(id);
             if (existingParameter == null || existingParameter.CompanyId != companyId) return NotFound();
 
-            var success = await _parametersService.DeleteAsync(id);
+            var success = await _parametersService.DeleteAsync(id, deletedBy);
             if (!success) return BadRequest("No se pudo eliminar el parámetro.");
-
             return NoContent();
         }
     }

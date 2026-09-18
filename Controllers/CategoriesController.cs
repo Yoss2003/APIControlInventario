@@ -43,8 +43,8 @@ namespace InventoryAPI.Controllers
             var existingCategory = await _categoryService.GetByIdAsync(id);
             if (existingCategory == null || existingCategory.CompanyId != companyId) return NotFound("Categoría no encontrada.");
 
-            var result = await _categoryService.UpdateCategoryAsync(id, category);
-            if (!result.Success) return BadRequest(new { error = result.Message });
+            var (Success, ErrorMessage) = await _categoryService.UpdateCategoryAsync(id, category);
+            if (!Success) return BadRequest(new { error = ErrorMessage });
 
             return NoContent();
         }
@@ -56,8 +56,8 @@ namespace InventoryAPI.Controllers
             if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
             category.CompanyId = int.Parse(companyIdHeader!);
-            var result = await _categoryService.CreateCategoryAsync(category);
-            if (!result.Success) return BadRequest(new { error = result.Message });
+            var (Success, ErrorMessage) = await _categoryService.CreateCategoryAsync(category);
+            if (!Success) return BadRequest(new { error = ErrorMessage });
 
             return CreatedAtAction(nameof(GetCategory), new { id = category.Id }, category);
         }
@@ -68,12 +68,13 @@ namespace InventoryAPI.Controllers
             if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
             int companyId = int.Parse(companyIdHeader!);
 
+            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+
             var existingCategory = await _categoryService.GetByIdAsync(id);
             if (existingCategory == null || existingCategory.CompanyId != companyId) return NotFound();
 
-            var result = await _categoryService.DeleteCategoryAsync(id);
-            if (!result.Success) return BadRequest(new { error = result.Message });
-
+            var (Success, Message) = await _categoryService.DeleteCategoryAsync(id, deletedBy);
+            if (!Success) return BadRequest(new { error = Message });
             return NoContent();
         }
     }

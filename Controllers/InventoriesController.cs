@@ -69,12 +69,13 @@ namespace InventoryAPI.Controllers
             if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
             int companyId = int.Parse(companyIdHeader!);
 
+            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+
             var existingInventory = await _inventoryService.GetByIdAsync(id);
             if (existingInventory == null || existingInventory.CompanyId != companyId) return NotFound();
 
-            var success = await _inventoryService.DeleteAsync(id);
+            var success = await _inventoryService.DeleteAsync(id, deletedBy);
             if (!success) return BadRequest("No se pudo eliminar el inventario.");
-
             return NoContent();
         }
 
@@ -88,10 +89,10 @@ namespace InventoryAPI.Controllers
             var existingInventory = await _inventoryService.GetByIdAsync(request.InventoryId);
             if (existingInventory == null || existingInventory.CompanyId != companyId) return NotFound(new { mensaje = "Inventario no encontrado." });
 
-            var result = await _inventoryService.ShareInventoryAsync(request);
-            if (!result.Success) return BadRequest(new { mensaje = result.Message });
+            var (Success, Message) = await _inventoryService.ShareInventoryAsync(request);
+            if (!Success) return BadRequest(new { mensaje = Message });
 
-            return Ok(new { mensaje = result.Message });
+            return Ok(new { mensaje = Message });
         }
 
         // GET: api/Inventories/5/Shared

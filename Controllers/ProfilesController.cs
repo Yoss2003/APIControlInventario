@@ -82,6 +82,7 @@ namespace InventoryAPI.Controllers
                 existingProfile.SmtpEmail = profile.SmtpEmail;
                 existingProfile.SmtpPassword = profile.SmtpPassword;
                 existingProfile.SmtpApproverEmail = profile.SmtpApproverEmail;
+                existingProfile.QrBilletera = profile.QrBilletera;
 
                 var success = await _profileService.UpdateAsync(existingProfile);
 
