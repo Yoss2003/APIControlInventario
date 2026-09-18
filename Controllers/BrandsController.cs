@@ -68,12 +68,13 @@ namespace InventoryAPI.Controllers
             if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
             int companyId = int.Parse(companyIdHeader!);
 
+            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+
             var existingBrand = await _brandService.GetByIdAsync(id);
             if (existingBrand == null || existingBrand.CompanyId != companyId) return NotFound("Marca no encontrada.");
 
-            var success = await _brandService.DeleteAsync(id);
+            var success = await _brandService.DeleteAsync(id, deletedBy);
             if (!success) return BadRequest("No se pudo eliminar la marca.");
-
             return NoContent();
         }
     }

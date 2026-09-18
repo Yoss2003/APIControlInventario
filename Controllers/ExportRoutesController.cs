@@ -84,12 +84,13 @@ namespace InventoryAPI.Controllers
         {
             try
             {
+                string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+
                 var existing = await _exportRouteService.GetByIdAsync(id);
                 if (existing == null) return NotFound();
 
-                var success = await _exportRouteService.DeleteAsync(id);
+                var success = await _exportRouteService.DeleteAsync(id, deletedBy);
                 if (!success) return BadRequest("No se pudo eliminar la ruta de exportación.");
-
                 return NoContent();
             }
             catch (Exception ex)

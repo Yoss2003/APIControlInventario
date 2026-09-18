@@ -10,5 +10,6 @@ namespace InventoryAPI.Services.IServices
         Task<(bool Success, string ErrorMessage)> AddDetailAsync(ArticleDetails detail);
         Task<bool> UpdateDetailAsync(ArticleDetails detail);
         Task<bool> DeleteDetailAsync(int id);
+        Task<bool> UpdateArticleWithAuditAsync(int id, Article updatedArticle, int companyId);
     }
 }

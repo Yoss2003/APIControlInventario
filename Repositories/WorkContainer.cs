@@ -3,14 +3,9 @@ using System.Linq.Expressions;
 
 namespace InventoryAPI.Repositories
 {
-    public class WorkContainer<T> : IWorkContainer<T> where T : class
+    public class WorkContainer<T>(IWorkFlow workFlow) : IWorkContainer<T> where T : class
     {
-        protected readonly IWorkFlow _workFlow;
-
-        public WorkContainer(IWorkFlow workFlow)
-        {
-            _workFlow = workFlow;
-        }
+        protected readonly IWorkFlow _workFlow = workFlow;
 
         public virtual async Task<IEnumerable<T>> GetAllAsync()
         {
@@ -36,35 +31,31 @@ namespace InventoryAPI.Repositories
             return result > 0;
         }
 
-        public virtual async Task<bool> DeleteAsync(int id)
+        public virtual async Task<bool> DeleteAsync(int id, string deletedBy = "Sistema")
         {
             var entity = await _workFlow.Repository<T>().GetByIdAsync(id);
             if (entity == null) return false;
 
-            var isActiveProperty = typeof(T).GetProperty("IsActive");
-
-            if (isActiveProperty != null)
+            if (entity is ControlInventario.Shared.Models.Interfaces.ISoftDelete softDeleteEntity)
             {
-                isActiveProperty.SetValue(entity, false);
-                _workFlow.Repository<T>().Update(entity);
+                softDeleteEntity.IsActive = false;
+                softDeleteEntity.DeletionDate = DateTime.Now;
+                softDeleteEntity.DeletionUser = deletedBy;
 
-                var result = await _workFlow.CompleteAsync();
-                return result > 0;
+                _workFlow.Repository<T>().Update(entity);
             }
             else
             {
-                throw new InvalidOperationException($"ERROR CRÍTICO: La tabla {typeof(T).Name} no soporta eliminación ni desactivación.");
+                _workFlow.Repository<T>().Delete(entity);
             }
+
+            var result = await _workFlow.CompleteAsync();
+            return result > 0;
         }
 
         public virtual async Task<IEnumerable<T>> GetAllByCompanyIdAsync(int companyId)
         {
-            var propertyInfo = typeof(T).GetProperty("CompanyId");
-            if (propertyInfo == null)
-            {
-                throw new InvalidOperationException($"La entidad {typeof(T).Name} no tiene una columna 'CompanyId'. No puedes filtrar esto por sucursal.");
-            }
-
+            var propertyInfo = typeof(T).GetProperty("CompanyId") ?? throw new InvalidOperationException($"La entidad {typeof(T).Name} no tiene una columna 'CompanyId'. No puedes filtrar esto por sucursal.");
             var parameter = Expression.Parameter(typeof(T), "x");
             var property = Expression.Property(parameter, propertyInfo);
             var constant = Expression.Constant(companyId);

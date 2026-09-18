@@ -1,6 +1,7 @@
 ﻿using ControlInventario.Shared.Models;
 using InventoryAPI.Services.IServices;
 using Microsoft.AspNetCore.Mvc;
+using System.ComponentModel.Design;
 
 namespace InventoryAPI.Controllers
 {
@@ -35,32 +36,17 @@ namespace InventoryAPI.Controllers
         {
             if (id != article.Id) return BadRequest();
             if (!ModelState.IsValid) return BadRequest(ModelState);
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
 
             int companyId = int.Parse(companyIdHeader!);
             article.CompanyId = companyId;
 
-            var existingArticle = await _articleService.GetByIdAsync(id);
-            if (existingArticle == null || existingArticle.CompanyId != companyId)
-                return NotFound(new { error = "El artículo no existe o no pertenece a tu sucursal." });
+            var success = await _articleService.UpdateArticleWithAuditAsync(id, article, companyId);
 
-            foreach (var property in typeof(Article).GetProperties())
-            {
-                if (property.Name != "Id" &&
-                    property.Name != "CompanyId" &&
-                    property.Name != "RegistrationDate" &&
-                    property.Name != "IsActive" &&
-                    property.Name != "IsSynced" &&
-                    property.CanWrite)
-                {
-                    var newValue = property.GetValue(article);
-                    property.SetValue(existingArticle, newValue);
-                }
-            }
-
-            var success = await _articleService.UpdateAsync(existingArticle);
-
-            if (!success) return BadRequest(new { error = "No se pudo actualizar." });
+            if (!success)
+                return BadRequest(new { error = "El artículo no existe o no se pudo actualizar." });
 
             return NoContent();
         }
@@ -85,12 +71,14 @@ namespace InventoryAPI.Controllers
             if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
             int companyId = int.Parse(companyIdHeader!);
 
+            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+
             var existingArticle = await _articleService.GetByIdAsync(id);
             if (existingArticle == null || existingArticle.CompanyId != companyId) return NotFound();
 
-            var success = await _articleService.DeleteAsync(id);
-            if (!success) return BadRequest("No se pudo eliminar el artículo.");
+            var success = await _articleService.DeleteAsync(id, deletedBy);
 
+            if (!success) return BadRequest("No se pudo eliminar el artículo.");
             return NoContent();
         }
 
@@ -129,10 +117,10 @@ namespace InventoryAPI.Controllers
             if (padre == null || padre.CompanyId != companyId)
                 return NotFound(new { error = "El artículo principal no existe o no pertenece a tu sucursal." });
 
-            var result = await _articleService.AddDetailAsync(detail);
+            var (Success, ErrorMessage) = await _articleService.AddDetailAsync(detail);
 
-            if (!result.Success)
-                return BadRequest(new { error = $"Error BD: {result.ErrorMessage}" });
+            if (!Success)
+                return BadRequest(new { error = $"Error BD: {ErrorMessage}" });
 
             // 🚀 LA MAGIA: Devolvemos el newId directamente desde la base de datos
             return Ok(new { message = "Número de serie registrado correctamente.", newId = detail.Id });
@@ -144,7 +132,7 @@ namespace InventoryAPI.Controllers
             if (id != detail.Id) return BadRequest();
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+            if (!Request.Headers.TryGetValue("X-Company-Id", out _))
                 return BadRequest("Falta indicar la sucursal.");
 
             var success = await _articleService.UpdateDetailAsync(detail);
@@ -157,11 +145,9 @@ namespace InventoryAPI.Controllers
         [HttpDelete("DeleteDetail/{id}")]
         public async Task<IActionResult> DeleteDetail(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
-                return BadRequest("Falta indicar la sucursal.");
+            if (!Request.Headers.TryGetValue("X-Company-Id", out _)) return BadRequest("Falta indicar la sucursal.");
 
             var success = await _articleService.DeleteDetailAsync(id);
-
             if (!success) return BadRequest(new { error = "No se pudo dar de baja la serie." });
 
             return Ok(new { message = "Serie dada de baja correctamente." });

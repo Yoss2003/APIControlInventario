@@ -5,16 +5,10 @@ using System.Linq.Expressions;
 
 namespace InventoryAPI.Repositories
 {
-    public class GenericRepository<T> : IGenericRepository<T> where T : class
+    public class GenericRepository<T>(AppDbContext context) : IGenericRepository<T> where T : class
     {
-        protected readonly AppDbContext _context;
-        internal DbSet<T> dbSet;
-
-        public GenericRepository(AppDbContext context)
-        {
-            _context = context;
-            this.dbSet = context.Set<T>();
-        }
+        protected readonly AppDbContext _context = context;
+        internal DbSet<T> dbSet = context.Set<T>();
 
         public async Task<IEnumerable<T>> GetAllWithIncludeAsync(params Expression<Func<T, object>>[] includes)
         {
@@ -36,7 +30,18 @@ namespace InventoryAPI.Repositories
 
         public void Update(T entity) => dbSet.Update(entity);
 
-        public void Delete(T entity) => dbSet.Remove(entity);
+        public void Delete(T entity)
+        {
+            if (entity is ControlInventario.Shared.Models.Interfaces.ISoftDelete softDeleteEntity)
+            {
+                softDeleteEntity.IsActive = false;
+                dbSet.Update(entity);
+            }
+            else
+            {
+                dbSet.Remove(entity);
+            }
+        }
 
         public void Detach(T entity)
         {

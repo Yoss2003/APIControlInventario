@@ -73,15 +73,16 @@ namespace InventoryAPI.Services
             await _workFlow.BeginTransactionAsync();
             try
             {
-                // 1. Guardamos la nueva serie (Hija)
                 await _workFlow.Repository<ArticleDetails>().AddAsync(detail);
 
-                // 2. Buscamos al Padre y le sumamos +1 al Stock
                 var padre = await _workFlow.Repository<Article>().GetByIdAsync(detail.ArticleId);
                 if (padre != null)
                 {
-                    padre.Stock += 1;
-                    _workFlow.Repository<Article>().Update(padre);
+                    if (padre.Tracking.ToString() == "Serialized")
+                    {
+                        padre.Stock += 1;
+                        _workFlow.Repository<Article>().Update(padre);
+                    }
                 }
 
                 await _workFlow.CompleteAsync();
@@ -137,6 +138,91 @@ namespace InventoryAPI.Services
             catch
             {
                 await _workFlow.RollbackTransactionAsync();
+                return false;
+            }
+        }
+
+        public async Task<bool> UpdateArticleWithAuditAsync(int id, Article updatedArticle, int companyId)
+        {
+            await _workFlow.BeginTransactionAsync();
+            try
+            {
+                // 1. Obtenemos el artículo original INTACTO desde la BD
+                var existingArticle = await _workFlow.Repository<Article>().GetByIdAsync(id);
+                if (existingArticle == null || existingArticle.CompanyId != companyId)
+                {
+                    await _workFlow.RollbackTransactionAsync();
+                    return false;
+                }
+
+                // 2. Calculamos la diferencia ANTES de que se sobrescriban los datos
+                decimal stockOriginal = existingArticle.Stock;
+                decimal stockNuevo = updatedArticle.Stock;
+                decimal diferenciaStock = stockNuevo - stockOriginal;
+
+                // 3. Aplicamos el Reflection que tenías en el controlador
+                foreach (var property in typeof(Article).GetProperties())
+                {
+                    if (property.Name != "Id" &&
+                        property.Name != "CompanyId" &&
+                        property.Name != "RegistrationDate" &&
+                        property.Name != "IsActive" &&
+                        property.Name != "IsSynced" &&
+                        property.CanWrite)
+                    {
+                        var newValue = property.GetValue(updatedArticle);
+                        property.SetValue(existingArticle, newValue);
+                    }
+                }
+
+                _workFlow.Repository<Article>().Update(existingArticle);
+                await _workFlow.CompleteAsync(); // Guardamos el cambio del artículo principal
+
+                // 4. GENERACIÓN AUTOMÁTICA DEL KÁRDEX (Solo si varió el stock)
+                string nombreEmpleado = string.IsNullOrWhiteSpace(updatedArticle.LoggedUserFullName)
+                                        ? "Usuario Sistema" : updatedArticle.LoggedUserFullName;
+                int empleadoId = updatedArticle.CurrentEmployeeId ?? 1;
+
+                if (diferenciaStock != 0)
+                {
+                    var movimientoKardex = new Movement
+                    {
+                        ArticleId = existingArticle.Id,
+                        EmployeeId = empleadoId,
+                        ActionId = diferenciaStock > 0 ? 1 : 2, // 1 = Ingreso, 2 = Salida/Merma
+                        MovementDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                        Observation = $"Ajuste de stock automatizado ({(diferenciaStock > 0 ? "+" : "")}{diferenciaStock:0.##})",
+                        Amount = Math.Abs(diferenciaStock),
+                        SalePrice = 0,
+                        PaymentMethod = "N/A",
+                        Recipient = "Almacén Local",
+                        CompanyId = companyId
+                    };
+                    await _workFlow.Repository<Movement>().AddAsync(movimientoKardex);
+                }
+
+                // 5. GENERACIÓN AUTOMÁTICA DEL HISTORIAL (HistoryLogs)
+                var nuevoLog = new HistoryLog
+                {
+                    LogDate = DateTime.Now,
+                    Username = nombreEmpleado,
+                    ModuleName = "Inventario",
+                    ActionName = "Modificación",
+                    Detail = $"Producto \"{existingArticle.Name}\" modificado. Variación de stock: {diferenciaStock:0.##}.",
+                    CompanyId = companyId
+                };
+                await _workFlow.Repository<HistoryLog>().AddAsync(nuevoLog);
+
+                // 6. Confirmamos la transacción completa
+                await _workFlow.CompleteAsync();
+                await _workFlow.CommitTransactionAsync();
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                await _workFlow.RollbackTransactionAsync();
+                System.Diagnostics.Debug.WriteLine($"[AUTO-AUDIT ERROR]: {ex.Message}");
                 return false;
             }
         }

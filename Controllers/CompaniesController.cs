@@ -44,9 +44,12 @@ namespace InventoryAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
+            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+
             var company = await service.GetByIdAsync(id);
             if (company == null) return NotFound();
-            await service.DeleteAsync(id);
+
+            await service.DeleteAsync(id, deletedBy);
             return Ok();
         }
     }

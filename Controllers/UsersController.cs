@@ -7,16 +7,10 @@ namespace InventoryAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class UsersController : ControllerBase
+    public class UsersController(IUserService userService, IWebHostEnvironment env) : ControllerBase
     {
-        private readonly IUserService _userService;
-        private readonly IWebHostEnvironment _env;
-
-        public UsersController(IUserService userService, IWebHostEnvironment env)
-        {
-            _userService = userService;
-            _env = env;
-        }
+        private readonly IUserService _userService = userService;
+        private readonly IWebHostEnvironment _env = env;
 
         // GET: api/Users
         [HttpGet]
@@ -63,12 +57,12 @@ namespace InventoryAPI.Controllers
             if (existingUser == null || existingUser.CompanyId != companyId)
                 return NotFound(new { mensaje = "El usuario no existe o no pertenece a tu sucursal." });
 
-            var result = await _userService.UpdateUserAsync(id, userActualizado);
-            if (!result.Success)
+            var (Success, Message) = await _userService.UpdateUserAsync(id, userActualizado);
+            if (!Success)
             {
-                if (result.Message.Contains("no existe")) return NotFound(new { mensaje = result.Message });
-                if (result.Message.Contains("no coincide")) return BadRequest(new { mensaje = result.Message });
-                return StatusCode(500, new { error = "Error al editar", detalle = result.Message });
+                if (Message.Contains("no existe")) return NotFound(new { mensaje = Message });
+                if (Message.Contains("no coincide")) return BadRequest(new { mensaje = Message });
+                return StatusCode(500, new { error = "Error al editar", detalle = Message });
             }
 
             return NoContent();
@@ -103,11 +97,13 @@ namespace InventoryAPI.Controllers
                 return BadRequest("Falta indicar la sucursal.");
             int companyId = int.Parse(companyIdHeader!);
 
+            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+
             var existingUser = await _userService.GetUserDtoByIdAsync(id);
             if (existingUser == null || existingUser.CompanyId != companyId)
                 return NotFound();
 
-            var success = await _userService.DeleteAsync(id);
+            var success = await _userService.DeleteAsync(id, deletedBy);
             if (!success) return NotFound();
 
             return NoContent();
@@ -153,16 +149,16 @@ namespace InventoryAPI.Controllers
                 return StatusCode(500, new { mensaje = "Fallo al guardar imagen en Somee.", detalle = result.Message });
             }
 
-            return Ok(new { Url = result.Url, mensaje = result.Message });
+            return Ok(new { result.Url, mensaje = result.Message });
         }
 
         [HttpPost("{id}/generate-2fa")]
         public async Task<IActionResult> Generate2FA(int id)
         {
-            var result = await _userService.Generate2FAAsync(id);
-            if (!result.Success) return NotFound();
+            var (Success, Secret, QrUri) = await _userService.Generate2FAAsync(id);
+            if (!Success) return NotFound();
 
-            return Ok(new { secret = result.Secret, qrUri = result.QrUri });
+            return Ok(new { secret = Secret, qrUri = QrUri });
         }
 
         [HttpPost("{id}/enable-2fa")]
@@ -187,8 +183,8 @@ namespace InventoryAPI.Controllers
         [HttpGet("Approve/{id}")]
         public async Task<IActionResult> ApproveEmployee(int id)
         {
-            var result = await _userService.ApproveEmployeeAsync(id);
-            if (!result.Success)
+            var (Success, _) = await _userService.ApproveEmployeeAsync(id);
+            if (!Success)
                 return Content("<h1>Error: Usuario no encontrado.</h1>", "text/html", System.Text.Encoding.UTF8);
 
             string htmlBody = @"
@@ -215,13 +211,13 @@ namespace InventoryAPI.Controllers
             if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
                 return BadRequest(new { mensaje = "El correo y la contraseña son obligatorios." });
 
-            var result = await _userService.TestEmailConnectionAsync(request.Email, request.Password);
-            if (!result.Success)
+            var (Success, Message) = await _userService.TestEmailConnectionAsync(request.Email, request.Password);
+            if (!Success)
             {
-                return StatusCode(500, new { error = "Fallo de conexión", detalle = result.Message });
+                return StatusCode(500, new { error = "Fallo de conexión", detalle = Message });
             }
 
-            return Ok(new { mensaje = result.Message });
+            return Ok(new { mensaje = Message });
         }
     }
 
