@@ -15,7 +15,7 @@ namespace InventoryAPI.Services
         public async Task<IEnumerable<UserDTO>> GetUsersDtoAsync()
         {
             var users = await _workFlow.Repository<User>().GetAllWithIncludeAsync(u => u.Role!, u => u.Employee!);
-            return users.Select(u => MapToDto(u)).ToList();
+            return [.. users.Select(u => MapToDto(u))];
         }
 
         public async Task<UserDTO?> GetUserDtoByIdAsync(int id)
@@ -31,7 +31,7 @@ namespace InventoryAPI.Services
             return MapToDto(fullUser);
         }
 
-        private UserDTO MapToDto(User u)
+        private static UserDTO MapToDto(User u)
         {
             return new UserDTO
             {
@@ -363,7 +363,7 @@ namespace InventoryAPI.Services
             }
         }
 
-        private async Task EnviarCorreoAprobacionAsync(User user, string nombreCompleto, string remitente, string passwordApp, string approverEmail)
+        private static async Task EnviarCorreoAprobacionAsync(User user, string nombreCompleto, string remitente, string passwordApp, string approverEmail)
         {
             try
             {
@@ -396,7 +396,7 @@ namespace InventoryAPI.Services
             }
         }
 
-        private async Task EnviarCorreoBienvenidaAsync(User user, string clavePlana, string remitente, string passwordApp)
+        private static async Task EnviarCorreoBienvenidaAsync(User user, string clavePlana, string remitente, string passwordApp)
         {
             try
             {
@@ -428,7 +428,7 @@ namespace InventoryAPI.Services
             }
         }
 
-        private async Task EnviarCorreoActivacionExitosaAsync(User user, string remitente, string passwordApp)
+        private static async Task EnviarCorreoActivacionExitosaAsync(User user, string remitente, string passwordApp)
         {
             try
             {
@@ -456,6 +456,32 @@ namespace InventoryAPI.Services
             {
                 Debug.WriteLine($"[EMAIL ERROR]: {ex.Message}");
             }
+        }
+
+        public override async Task<bool> DeleteAsync(int id, string deletedBy = "Sistema")
+        {
+            var usersMatch = await _workFlow.Repository<User>().GetAllWithIncludeAsync(u => u.Employee!);
+            var userDb = usersMatch.FirstOrDefault(u => u.Id == id);
+
+            if (userDb == null) return false;
+
+            // 1. Borrado lógico del Usuario
+            userDb.IsActive = false;
+            userDb.DeletionDate = DateTime.Now;
+            userDb.DeletionUser = deletedBy;
+
+            // 2. Borrado lógico en cascada del Empleado (si existe)
+            if (userDb.Employee != null)
+            {
+                userDb.Employee.IsActive = false;
+                userDb.Employee.DeletionDate = DateTime.Now;
+                userDb.Employee.DeletionUser = deletedBy;
+            }
+
+            _workFlow.Repository<User>().Update(userDb);
+            var result = await _workFlow.CompleteAsync();
+
+            return result > 0;
         }
     }
 }
