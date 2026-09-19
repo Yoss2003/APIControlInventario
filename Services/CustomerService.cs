@@ -17,7 +17,13 @@ namespace InventoryAPI.Services
             try
             {
                 using var client = new HttpClient();
-                string urlExterna = $"https://api.apis.net.pe/v1/dni?numero={dni}";
+                string token = "sk_13723.0lArrSFwUExN4vbBK34oN97ryg6uZhQw";
+
+                client.DefaultRequestHeaders.Clear();
+
+                client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+
+                string urlExterna = $"https://api.decolecta.com/v1/reniec/dni?numero={dni}";
                 var response = await client.GetAsync(urlExterna);
 
                 if (response.IsSuccessStatusCode)
@@ -26,7 +32,9 @@ namespace InventoryAPI.Services
                     return (true, jsonContent);
                 }
 
-                return (false, "El DNI no fue localizado en la base de datos pública.");
+                var errorReal = await response.Content.ReadAsStringAsync();
+
+                return (false, $"Error Decolecta HTTP {(int)response.StatusCode}: {errorReal}");
             }
             catch (Exception ex)
             {
