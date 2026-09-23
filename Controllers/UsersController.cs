@@ -1,7 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using InventoryAPI.Services.IServices;
-using ControlInventario.Shared.Models;
+﻿using ControlInventario.Shared.Models;
 using ControlInventario.Shared.Models.DTO;
+using InventoryAPI.Services.IServices;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
 namespace InventoryAPI.Controllers
 {
@@ -20,7 +21,6 @@ namespace InventoryAPI.Controllers
                 return BadRequest("Falta indicar la sucursal.");
             int companyId = int.Parse(companyIdHeader!);
 
-            // 2. Filtramos los usuarios para que solo devuelva los de la sucursal que hace la petición
             var users = await _userService.GetUsersDtoAsync();
             var companyUsers = users.Where(u => u.CompanyId == companyId).ToList();
 
@@ -75,7 +75,8 @@ namespace InventoryAPI.Controllers
             if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
                 return BadRequest("Falta indicar la sucursal.");
 
-            user.CompanyId = int.Parse(companyIdHeader!);
+            if (user.CompanyId == null || user.CompanyId <= 0)
+                user.CompanyId = int.Parse(companyIdHeader!);
 
             var result = await _userService.CreateUserAsync(user, _env.ContentRootPath);
             if (!result.Success)
@@ -179,32 +180,6 @@ namespace InventoryAPI.Controllers
             return Ok(new { mensaje = "Desactivado" });
         }
 
-        // GET: api/Users/Approve/5
-        [HttpGet("Approve/{id}")]
-        public async Task<IActionResult> ApproveEmployee(int id)
-        {
-            var (Success, _) = await _userService.ApproveEmployeeAsync(id);
-            if (!Success)
-                return Content("<h1>Error: Usuario no encontrado.</h1>", "text/html", System.Text.Encoding.UTF8);
-
-            string htmlBody = @"
-            <!DOCTYPE html>
-            <html lang='es'>
-            <head>
-                <meta charset='UTF-8'>
-                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-                <title>Aprobación Exitosa</title>
-            </head>
-            <body style='text-align: center; font-family: Arial, sans-serif; padding: 50px; background-color: #f4f6f7;'>
-                <h1 style='color: #2ECC71;'>✔️ ¡Aprobación Exitosa!</h1>
-                <p style='font-size: 18px; color: #333;'>El colaborador ha sido validado permanentemente en el sistema.</p>
-                <p style='color: #7f8c8d;'>Ya puedes cerrar esta ventana.</p>
-            </body>
-            </html>";
-
-            return Content(htmlBody, "text/html", System.Text.Encoding.UTF8);
-        }
-
         [HttpPost("TestEmailConfiguration")]
         public async Task<IActionResult> TestEmailConfiguration([FromBody] SmtpTestRequest request)
         {
@@ -219,6 +194,134 @@ namespace InventoryAPI.Controllers
 
             return Ok(new { mensaje = Message });
         }
+
+        [HttpGet("ApproveAccount/{id}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ApproveAccountFromEmail(int id)
+        {
+            var result = await _userService.ApproveEmployeeAsync(id);
+
+            // Variables dinámicas para el estado de la interfaz
+            string colorBase, colorFondo, icono, titulo, mensaje;
+
+            if (result.Success)
+            {
+                colorBase = "#10B981";
+                colorFondo = "#ECFDF5";
+                icono = @"<svg class='icon' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>";
+                titulo = "Cuenta Aprobada";
+                mensaje = result.Message;
+            }
+            else if (result.Message.Contains("ya había sido aprobado"))
+            {
+                colorBase = "#F59E0B";
+                colorFondo = "#FFFBEB";
+                icono = @"<svg class='icon' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>";
+                titulo = "Acción Completada";
+                mensaje = result.Message;
+            }
+            else
+            {
+                colorBase = "#EF4444";
+                colorFondo = "#FEF2F2";
+                icono = @"<svg class='icon' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>";
+                titulo = "Acceso Denegado";
+                mensaje = result.Message;
+            }
+
+            // Diseño HTML/CSS simulando un componente de React moderno
+            string htmlResponse = $@"
+            <!DOCTYPE html>
+            <html lang='es'>
+            <head>
+                <meta charset='UTF-8'>
+                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+                <title>{titulo} - Control Inventario</title>
+                <style>
+                    body {{
+                        margin: 0;
+                        padding: 0;
+                        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                        background-color: #F3F4F6;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 20px;
+                        align-items: center;
+                        justify-content: center;
+                        min-height: 100vh;
+                    }}
+                    .card {{
+                        background-color: #FFFFFF;
+                        border-radius: 16px;
+                        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+                        max-width: 420px;
+                        width: 90%;
+                        padding: 40px 30px;
+                        text-align: center;
+                        border-top: 6px solid {colorBase};
+                    }}
+                    .icon-container {{
+                        background-color: {colorFondo};
+                        color: {colorBase};
+                        width: 80px;
+                        height: 80px;
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        margin: 0 auto 24px auto;
+                    }}
+                    .icon {{
+                        width: 40px;
+                        height: 40px;
+                    }}
+                    h1 {{
+                        color: #111827;
+                        font-size: 24px;
+                        font-weight: 700;
+                        margin: 0 0 16px 0;
+                    }}
+                    p.message {{
+                        color: #4B5563;
+                        font-size: 16px;
+                        line-height: 1.5;
+                        margin: 0 0 32px 0;
+                    }}
+                    p.footer {{
+                        color: #9CA3AF;
+                        font-size: 13px;
+                        margin: 0;
+                        border-top: 1px solid #E5E7EB;
+                        padding-top: 20px;
+                    }}
+                    center {{
+                        position: absolute;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        z-index: -10;
+                        opacity: 0.01;
+                        pointer-events: none;
+                        user-select: none;
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class='card'>
+                    <div class='icon-container'>
+                        {icono}
+                    </div>
+                    <h1>{titulo}</h1>
+                    <p class='message'>{mensaje}</p>
+                    <p class='footer'>Esta pestaña puede ser cerrada de forma segura.</p>
+                </div>
+            </body>
+            </html>";
+
+            Response.ContentType = "text/html; charset=utf-8";
+            await Response.WriteAsync(htmlResponse);
+            return new EmptyResult();
+        }
     }
 
     public class SmtpTestRequest
@@ -226,6 +329,7 @@ namespace InventoryAPI.Controllers
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
     }
+
     public class PhotoUpdateDTO
     {
         public string Base64Image { get; set; } = string.Empty;

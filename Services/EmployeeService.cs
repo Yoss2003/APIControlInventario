@@ -12,11 +12,33 @@ namespace InventoryAPI.Services
             var employees = await _workFlow.Repository<Employee>()
                 .GetAllWithIncludeAsync(e => e.User!);
 
-            foreach (var emp in employees)
+            var activeEmployees = employees.Where(e => e.IsActive).ToList();
+
+            foreach (var emp in activeEmployees)
             {
-                if (emp.User != null) emp.PictureUrl = emp.User.ProfilePictureUrl;
+                if (emp.User != null)
+                {
+                    emp.PictureUrl = emp.User.ProfilePictureUrl;
+                }
             }
-            return employees;
+            return activeEmployees;
+        }
+
+        public override async Task<IEnumerable<Employee>> GetAllByCompanyIdAsync(int companyId)
+        {
+            var employees = await _workFlow.Repository<Employee>()
+                .GetAllWithIncludeAsync(e => e.User!);
+
+            var activeEmployees = employees.Where(e => e.CompanyId == companyId && e.IsActive).ToList();
+
+            foreach (var emp in activeEmployees)
+            {
+                if (emp.User != null)
+                {
+                    emp.PictureUrl = emp.User.ProfilePictureUrl;
+                }
+            }
+            return activeEmployees;
         }
 
         public override async Task<bool> UpdateAsync(Employee employee)
@@ -37,28 +59,18 @@ namespace InventoryAPI.Services
         }
 
         public override async Task<bool> DeleteAsync(int id, string deletedBy = "Sistema")
-        {   
+        {
             var empMatch = await _workFlow.Repository<Employee>().GetAllWithIncludeAsync(e => e.User!);
-            var empDb = empMatch.FirstOrDefault(e => e.Id == id);
+            var existingEmployee = empMatch.FirstOrDefault(e => e.Id == id);
 
-            if (empDb == null) return false;
+            if (existingEmployee == null) return false;
 
-            // 1. Borrado lógico del Empleado
-            empDb.IsActive = false;
-            empDb.DeletionDate = DateTime.Now;
-            empDb.DeletionUser = deletedBy;
+            existingEmployee.IsActive = false;
 
-            // 2. Borrado lógico en cascada del Usuario (si existe)
-            if (empDb.User != null)
-            {
-                empDb.User.IsActive = false;
-                empDb.User.DeletionDate = DateTime.Now;
-                empDb.User.DeletionUser = deletedBy;
-            }
+            existingEmployee.User?.IsActive = false;
 
-            _workFlow.Repository<Employee>().Update(empDb);
+            _workFlow.Repository<Employee>().Update(existingEmployee);
             var result = await _workFlow.CompleteAsync();
-
             return result > 0;
         }
     }
