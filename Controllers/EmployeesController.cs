@@ -13,8 +13,14 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetEmployees()
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
+                return BadRequest("Falta indicar la sucursal.");
+
             int companyId = int.Parse(companyIdHeader!);
+
+            if (companyId == 0)
+                return Ok(await _employeeService.GetAllAsync());
+
             return Ok(await _employeeService.GetAllByCompanyIdAsync(companyId));
         }
 
@@ -38,9 +44,7 @@ namespace InventoryAPI.Controllers
             if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
             if (employee.CompanyId <= 0)
-            {
                 employee.CompanyId = int.Parse(companyIdHeader!);
-            }
 
             var success = await _employeeService.UpdateAsync(employee);
             if (!success) return BadRequest("No se pudo actualizar.");
@@ -68,7 +72,7 @@ namespace InventoryAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteEmployee(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+            if (!Request.Headers.TryGetValue("X-Company-Id", out _)) return BadRequest("Falta indicar la sucursal.");
 
             string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
 
