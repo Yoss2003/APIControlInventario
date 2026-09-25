@@ -1,17 +1,17 @@
 ﻿using ControlInventario.Shared.Models;
 using InventoryAPI.Services.IServices;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class CompaniesController(ICompanyService service) : ControllerBase
+    public class CompaniesController(ICompanyService service) : BaseApiController
     {
         [HttpGet]
         public async Task<IActionResult> Get() => Ok(await service.GetAllAsync());
 
         [HttpGet("Active")]
+        [AllowAnonymous]
         public async Task<IActionResult> GetActiveCompanies()
         {
             var companies = await service.GetActiveCompaniesPublicAsync();
@@ -44,9 +44,9 @@ namespace InventoryAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
-
+            string deletedBy = ObtenerUsuarioSeguro().ToString();
             var company = await service.GetByIdAsync(id);
+
             if (company == null) return NotFound();
 
             await service.DeleteAsync(id, deletedBy);

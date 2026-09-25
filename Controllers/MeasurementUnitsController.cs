@@ -3,13 +3,10 @@ using InventoryAPI.Services.IServices;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class MeasurementUnitsController(IMeasurementUnitService measurementUnitService) : ControllerBase
+    public class MeasurementUnitsController(IMeasurementUnitService measurementUnitService) : BaseApiController
     {
         private readonly IMeasurementUnitService _measurementUnitService = measurementUnitService;
 
-        // GET: api/MeasurementUnits
         [HttpGet]
         public async Task<IActionResult> GetMeasurementUnits()
         {
@@ -17,17 +14,14 @@ namespace InventoryAPI.Controllers
             return Ok(units);
         }
 
-        // GET: api/MeasurementUnits/5
         [HttpGet("{id}")]
         public async Task<IActionResult> GetMeasurementUnit(int id)
         {
             var unit = await _measurementUnitService.GetByIdAsync(id);
-
             if (unit == null)
             {
                 return NotFound();
             }
-
             return Ok(unit);
         }
     }

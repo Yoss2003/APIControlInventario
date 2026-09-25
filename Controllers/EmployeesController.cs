@@ -4,19 +4,14 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class EmployeesController(IEmployeeService employeeService) : ControllerBase
+    public class EmployeesController(IEmployeeService employeeService) : BaseApiController
     {
         private readonly IEmployeeService _employeeService = employeeService;
 
         [HttpGet]
         public async Task<IActionResult> GetEmployees()
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
-                return BadRequest("Falta indicar la sucursal.");
-
-            int companyId = int.Parse(companyIdHeader!);
+            int companyId = ObtenerEmpresaSegura();
 
             if (companyId == 0)
                 return Ok(await _employeeService.GetAllAsync());
@@ -27,12 +22,10 @@ namespace InventoryAPI.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetEmployee(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
-
+            int companyId = ObtenerEmpresaSegura();
             var employee = await _employeeService.GetByIdAsync(id);
-            if (employee == null || employee.CompanyId != companyId) return NotFound();
 
+            if (employee == null || employee.CompanyId != companyId) return NotFound();
             return Ok(employee);
         }
 
@@ -41,10 +34,11 @@ namespace InventoryAPI.Controllers
         {
             if (id != employee.Id) return BadRequest();
             if (!ModelState.IsValid) return BadRequest(ModelState);
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+
+            int companyId = ObtenerEmpresaSegura();
 
             if (employee.CompanyId <= 0)
-                employee.CompanyId = int.Parse(companyIdHeader!);
+                employee.CompanyId = companyId;
 
             var success = await _employeeService.UpdateAsync(employee);
             if (!success) return BadRequest("No se pudo actualizar.");
@@ -56,11 +50,12 @@ namespace InventoryAPI.Controllers
         public async Task<IActionResult> PostEmployee([FromBody] Employee employee)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
+
+            int companyId = ObtenerEmpresaSegura();
 
             if (employee.CompanyId <= 0)
             {
-                employee.CompanyId = int.Parse(companyIdHeader!);
+                employee.CompanyId = companyId;
             }
 
             var success = await _employeeService.CreateAsync(employee);
@@ -72,9 +67,11 @@ namespace InventoryAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteEmployee(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out _)) return BadRequest("Falta indicar la sucursal.");
+            int companyId = ObtenerEmpresaSegura();
+            string deletedBy = ObtenerUsuarioSeguro().ToString();
 
-            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+            var existingEmployee = await _employeeService.GetByIdAsync(id);
+            if (existingEmployee == null || existingEmployee.CompanyId != companyId) return NotFound();
 
             var success = await _employeeService.DeleteAsync(id, deletedBy);
             if (!success) return BadRequest("No se pudo eliminar.");

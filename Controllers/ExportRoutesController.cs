@@ -4,9 +4,7 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class ExportRoutesController(IExportRouteService exportRouteService) : ControllerBase
+    public class ExportRoutesController(IExportRouteService exportRouteService) : BaseApiController
     {
         private readonly IExportRouteService _exportRouteService = exportRouteService;
 
@@ -44,7 +42,6 @@ namespace InventoryAPI.Controllers
         {
             if (id != exportRoute.Id) return BadRequest();
             if (!ModelState.IsValid) return BadRequest(ModelState);
-
             try
             {
                 var existing = await _exportRouteService.GetByIdAsync(id);
@@ -65,7 +62,6 @@ namespace InventoryAPI.Controllers
         public async Task<ActionResult<ExportRoute>> PostExportRoute([FromBody] ExportRoute exportRoute)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
-
             try
             {
                 var success = await _exportRouteService.CreateAsync(exportRoute);
@@ -84,13 +80,14 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+                string deletedBy = ObtenerUsuarioSeguro().ToString();
 
                 var existing = await _exportRouteService.GetByIdAsync(id);
                 if (existing == null) return NotFound();
 
                 var success = await _exportRouteService.DeleteAsync(id, deletedBy);
                 if (!success) return BadRequest("No se pudo eliminar la ruta de exportación.");
+
                 return NoContent();
             }
             catch (Exception ex)

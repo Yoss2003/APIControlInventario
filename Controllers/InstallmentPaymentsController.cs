@@ -4,9 +4,7 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class InstallmentPaymentsController(IInstallmentPaymentService installmentPaymentService) : ControllerBase
+    public class InstallmentPaymentsController(IInstallmentPaymentService installmentPaymentService) : BaseApiController
     {
         private readonly IInstallmentPaymentService _installmentPaymentService = installmentPaymentService;
 
@@ -15,8 +13,7 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                int companyId = int.Parse(companyIdHeader!);
+                int companyId = ObtenerEmpresaSegura();
                 return Ok(await _installmentPaymentService.GetAllByCompanyIdAsync(companyId));
             }
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
@@ -27,12 +24,10 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                int companyId = int.Parse(companyIdHeader!);
-
+                int companyId = ObtenerEmpresaSegura();
                 var payment = await _installmentPaymentService.GetByIdAsync(id);
-                if (payment == null || payment.CompanyId != companyId) return NotFound();
 
+                if (payment == null || payment.CompanyId != companyId) return NotFound();
                 return Ok(payment);
             }
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
@@ -44,8 +39,7 @@ namespace InventoryAPI.Controllers
             if (id != installmentPayment.Id) return BadRequest("El ID no coincide.");
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
+            int companyId = ObtenerEmpresaSegura();
             installmentPayment.CompanyId = companyId;
 
             try
@@ -67,12 +61,10 @@ namespace InventoryAPI.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                installmentPayment.CompanyId = int.Parse(companyIdHeader!);
-
+                installmentPayment.CompanyId = ObtenerEmpresaSegura();
                 var success = await _installmentPaymentService.CreateAsync(installmentPayment);
-                if (!success) return BadRequest("No se pudo crear.");
 
+                if (!success) return BadRequest("No se pudo crear.");
                 return CreatedAtAction(nameof(GetInstallmentPayment), new { id = installmentPayment.Id }, installmentPayment);
             }
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
@@ -83,10 +75,9 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                int companyId = int.Parse(companyIdHeader!);
-
+                int companyId = ObtenerEmpresaSegura();
                 var existingPayment = await _installmentPaymentService.GetByIdAsync(id);
+
                 if (existingPayment == null || existingPayment.CompanyId != companyId) return NotFound();
 
                 var success = await _installmentPaymentService.DeleteAsync(id);

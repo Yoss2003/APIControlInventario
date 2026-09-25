@@ -3,13 +3,10 @@ using InventoryAPI.Services.IServices;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class LanguagesController(ILanguageService languageService) : ControllerBase
+    public class LanguagesController(ILanguageService languageService) : BaseApiController
     {
         private readonly ILanguageService _languageService = languageService;
 
-        // GET: api/Languages
         [HttpGet]
         public async Task<IActionResult> GetLanguages()
         {
@@ -17,17 +14,14 @@ namespace InventoryAPI.Controllers
             return Ok(languages);
         }
 
-        // GET: api/Languages/5
         [HttpGet("{id}")]
         public async Task<IActionResult> GetLanguage(int id)
         {
             var language = await _languageService.GetByIdAsync(id);
-
             if (language == null)
             {
                 return NotFound();
             }
-
             return Ok(language);
         }
     }

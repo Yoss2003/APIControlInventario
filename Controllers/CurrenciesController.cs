@@ -4,13 +4,10 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class CurrenciesController(ICurrencyService currencyService) : ControllerBase
+    public class CurrenciesController(ICurrencyService currencyService) : BaseApiController
     {
         private readonly ICurrencyService _currencyService = currencyService;
 
-        // GET: api/Currencies
         [HttpGet]
         public async Task<IActionResult> GetCurrencies()
         {
@@ -25,19 +22,16 @@ namespace InventoryAPI.Controllers
             }
         }
 
-        // GET: api/Currencies/5
         [HttpGet("{id}")]
         public async Task<IActionResult> GetCurrency(int id)
         {
             try
             {
                 var currency = await _currencyService.GetByIdAsync(id);
-
                 if (currency == null)
                 {
                     return NotFound($"No se encontró la moneda con ID {id}.");
                 }
-
                 return Ok(currency);
             }
             catch (Exception ex)

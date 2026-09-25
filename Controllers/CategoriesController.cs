@@ -4,29 +4,24 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class CategoriesController(ICategoryService categoryService) : ControllerBase
+    public class CategoriesController(ICategoryService categoryService) : BaseApiController
     {
         private readonly ICategoryService _categoryService = categoryService;
 
         [HttpGet]
         public async Task<IActionResult> GetCategories()
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
+            int companyId = ObtenerEmpresaSegura();
             return Ok(await _categoryService.GetAllByCompanyIdAsync(companyId));
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetCategory(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
-
+            int companyId = ObtenerEmpresaSegura();
             var category = await _categoryService.GetByIdAsync(id);
-            if (category == null || category.CompanyId != companyId) return NotFound();
 
+            if (category == null || category.CompanyId != companyId) return NotFound();
             return Ok(category);
         }
 
@@ -35,9 +30,8 @@ namespace InventoryAPI.Controllers
         {
             if (id != category.Id) return BadRequest("El ID no coincide.");
             if (!ModelState.IsValid) return BadRequest(ModelState);
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
-            int companyId = int.Parse(companyIdHeader!);
+            int companyId = ObtenerEmpresaSegura();
             category.CompanyId = companyId;
 
             var existingCategory = await _categoryService.GetByIdAsync(id);
@@ -53,28 +47,26 @@ namespace InventoryAPI.Controllers
         public async Task<IActionResult> PostCategory([FromBody] Category category)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
-            category.CompanyId = int.Parse(companyIdHeader!);
+            category.CompanyId = ObtenerEmpresaSegura();
             var (Success, ErrorMessage) = await _categoryService.CreateCategoryAsync(category);
-            if (!Success) return BadRequest(new { error = ErrorMessage });
 
+            if (!Success) return BadRequest(new { error = ErrorMessage });
             return CreatedAtAction(nameof(GetCategory), new { id = category.Id }, category);
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteCategory(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
-
-            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+            int companyId = ObtenerEmpresaSegura();
+            string deletedBy = ObtenerUsuarioSeguro().ToString();
 
             var existingCategory = await _categoryService.GetByIdAsync(id);
             if (existingCategory == null || existingCategory.CompanyId != companyId) return NotFound();
 
             var (Success, Message) = await _categoryService.DeleteCategoryAsync(id, deletedBy);
             if (!Success) return BadRequest(new { error = Message });
+
             return NoContent();
         }
     }

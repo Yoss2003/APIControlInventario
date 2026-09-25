@@ -4,29 +4,24 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class BrandsController(IBrandService brandService) : ControllerBase
+    public class BrandsController(IBrandService brandService) : BaseApiController
     {
         private readonly IBrandService _brandService = brandService;
 
         [HttpGet]
         public async Task<IActionResult> GetBrands()
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
+            int companyId = ObtenerEmpresaSegura();
             return Ok(await _brandService.GetAllByCompanyIdAsync(companyId));
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetBrand(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
-
+            int companyId = ObtenerEmpresaSegura();
             var brand = await _brandService.GetByIdAsync(id);
-            if (brand == null || brand.CompanyId != companyId) return NotFound($"No se encontró la marca.");
 
+            if (brand == null || brand.CompanyId != companyId) return NotFound($"No se encontró la marca.");
             return Ok(brand);
         }
 
@@ -35,9 +30,8 @@ namespace InventoryAPI.Controllers
         {
             if (id != brand.Id) return BadRequest("El ID no coincide.");
             if (!ModelState.IsValid) return BadRequest(ModelState);
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
-            int companyId = int.Parse(companyIdHeader!);
+            int companyId = ObtenerEmpresaSegura();
             brand.CompanyId = companyId;
 
             var existingBrand = await _brandService.GetByIdAsync(id);
@@ -53,28 +47,26 @@ namespace InventoryAPI.Controllers
         public async Task<IActionResult> PostBrand([FromBody] Brand brand)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
 
-            brand.CompanyId = int.Parse(companyIdHeader!);
+            brand.CompanyId = ObtenerEmpresaSegura();
             var success = await _brandService.CreateAsync(brand);
-            if (!success) return BadRequest("No se pudo crear.");
 
+            if (!success) return BadRequest("No se pudo crear.");
             return CreatedAtAction(nameof(GetBrand), new { id = brand.Id }, brand);
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteBrand(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
-
-            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+            int companyId = ObtenerEmpresaSegura();
+            string deletedBy = ObtenerUsuarioSeguro().ToString();
 
             var existingBrand = await _brandService.GetByIdAsync(id);
             if (existingBrand == null || existingBrand.CompanyId != companyId) return NotFound("Marca no encontrada.");
 
             var success = await _brandService.DeleteAsync(id, deletedBy);
             if (!success) return BadRequest("No se pudo eliminar la marca.");
+
             return NoContent();
         }
     }

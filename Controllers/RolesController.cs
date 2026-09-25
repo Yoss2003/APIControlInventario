@@ -1,49 +1,31 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services.IServices;
-using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class RolesController(IRoleService roleService) : ControllerBase
+    public class RolesController(IRoleService roleService) : BaseApiController
     {
         private readonly IRoleService _roleService = roleService;
 
-        // GET: api/Roles
         [HttpGet]
-        public async Task<IActionResult> GetRoles()
-        {
-            var roles = await _roleService.GetAllAsync();
-            return Ok(roles);
-        }
+        public async Task<IActionResult> GetRoles() => Ok(await _roleService.GetAllAsync());
 
-        // GET: api/Roles/5
         [HttpGet("{id}")]
         public async Task<IActionResult> GetRole(int id)
         {
             var role = await _roleService.GetByIdAsync(id);
-
-            if (role == null)
-            {
-                return NotFound();
-            }
+            if (role == null) return NotFound();
 
             return Ok(role);
         }
 
-        // POST: api/Roles/5/permissions
         [HttpPost("{id}/permissions")]
         public async Task<IActionResult> UpdateRolePermissions(int id, [FromBody] List<int> permissionIds)
         {
-            var result = await _roleService.UpdateRolePermissionsAsync(id, permissionIds);
+            var (Success, Message) = await _roleService.UpdateRolePermissionsAsync(id, permissionIds);
+            if (!Success) return NotFound(new { message = Message });
 
-            if (!result.Success)
-            {
-                return NotFound(new { message = result.Message });
-            }
-
-            return Ok(new { message = result.Message });
+            return Ok(new { message = Message });
         }
     }
 }
