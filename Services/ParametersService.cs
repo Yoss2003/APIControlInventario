@@ -7,5 +7,9 @@ namespace InventoryAPI.Services
 {
     public class ParametersService(IWorkFlow workFlow) : WorkContainer<Parameters>(workFlow), IParametersService
     {
+        public new async Task<IEnumerable<Parameters>> GetAllByCompanyIdAsync(int companyId)
+        {
+            return await _workFlow.Parameters.FindAsync(p => p.CompanyId == companyId || p.CompanyId == 1);
+        }
     }
 }

@@ -4,24 +4,16 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class AccountReceivablesController : ControllerBase
+    public class AccountReceivablesController(IAccountReceivableService accountReceivableService) : BaseApiController
     {
-        private readonly IAccountReceivableService _accountReceivableService;
-
-        public AccountReceivablesController(IAccountReceivableService accountReceivableService)
-        {
-            _accountReceivableService = accountReceivableService;
-        }
+        private readonly IAccountReceivableService _accountReceivableService = accountReceivableService;
 
         [HttpGet]
         public async Task<IActionResult> GetAccountsReceivables()
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                int companyId = int.Parse(companyIdHeader!);
+                int companyId = ObtenerEmpresaSegura();
                 return Ok(await _accountReceivableService.GetAllByCompanyIdAsync(companyId));
             }
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
@@ -32,10 +24,9 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                int companyId = int.Parse(companyIdHeader!);
-
+                int companyId = ObtenerEmpresaSegura();
                 var accountReceivable = await _accountReceivableService.GetByIdAsync(id);
+
                 if (accountReceivable == null || accountReceivable.CompanyId != companyId) return NotFound();
 
                 return Ok(accountReceivable);
@@ -49,10 +40,9 @@ namespace InventoryAPI.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                accountReceivable.CompanyId = int.Parse(companyIdHeader!);
-
+                accountReceivable.CompanyId = ObtenerEmpresaSegura();
                 var success = await _accountReceivableService.CreateAsync(accountReceivable);
+
                 if (!success) return BadRequest("No se pudo crear.");
                 return CreatedAtAction(nameof(GetAccountReceivable), new { id = accountReceivable.Id }, accountReceivable);
             }
@@ -65,9 +55,7 @@ namespace InventoryAPI.Controllers
             if (id != accountReceivable.Id) return BadRequest("El ID no coincide.");
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
-
+            int companyId = ObtenerEmpresaSegura();
             accountReceivable.CompanyId = companyId;
 
             try
@@ -88,10 +76,9 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                int companyId = int.Parse(companyIdHeader!);
-
+                int companyId = ObtenerEmpresaSegura();
                 var existingAccountReceivable = await _accountReceivableService.GetByIdAsync(id);
+
                 if (existingAccountReceivable == null || existingAccountReceivable.CompanyId != companyId) return NotFound();
 
                 var success = await _accountReceivableService.DeleteAsync(id);

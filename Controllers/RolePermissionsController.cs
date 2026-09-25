@@ -1,11 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services.IServices;
+
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class RolePermissionsController(IRolePermissionService service) : ControllerBase
+    public class RolePermissionsController(IRolePermissionService service) : BaseApiController
     {
-        [HttpGet] public async Task<IActionResult> Get() => Ok(await service.GetAllAsync());
+        [HttpGet]
+        public async Task<IActionResult> Get() => Ok(await service.GetAllAsync());
     }
 }

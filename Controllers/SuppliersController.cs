@@ -4,18 +4,14 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class SuppliersController(ISupplierService supplierService) : ControllerBase
+    public class SuppliersController(ISupplierService supplierService) : BaseApiController
     {
         private readonly ISupplierService _supplierService = supplierService;
 
         [HttpGet("ruc/{ruc}")]
         public async Task<IActionResult> ConsultarRuc(string ruc)
         {
-            // Sin cambios, API externa no necesita verificación local.
             var result = await _supplierService.ConsultarRucAsync(ruc);
-
             if (!result.Success)
             {
                 if (result.Message.Contains("crítica")) return StatusCode(500, new { error = result.Message });
@@ -28,20 +24,17 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetSuppliers()
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
+            int companyId = ObtenerEmpresaSegura();
             return Ok(await _supplierService.GetAllByCompanyIdAsync(companyId));
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetSupplier(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
-
+            int companyId = ObtenerEmpresaSegura();
             var supplier = await _supplierService.GetByIdAsync(id);
-            if (supplier == null || supplier.CompanyId != companyId) return NotFound();
 
+            if (supplier == null || supplier.CompanyId != companyId) return NotFound();
             return Ok(supplier);
         }
 
@@ -51,8 +44,7 @@ namespace InventoryAPI.Controllers
             if (id != supplier.Id) return BadRequest();
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
+            int companyId = ObtenerEmpresaSegura();
             supplier.CompanyId = companyId;
 
             var existingSupplier = await _supplierService.GetByIdAsync(id);
@@ -69,28 +61,25 @@ namespace InventoryAPI.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            supplier.CompanyId = int.Parse(companyIdHeader!);
-
+            supplier.CompanyId = ObtenerEmpresaSegura();
             var success = await _supplierService.CreateAsync(supplier);
-            if (!success) return BadRequest("No se pudo crear.");
 
+            if (!success) return BadRequest("No se pudo crear.");
             return CreatedAtAction(nameof(GetSupplier), new { id = supplier.Id }, supplier);
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteSupplier(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
-
-            string deletedBy = Request.Headers.TryGetValue("X-User-Name", out var userHeader) ? userHeader.ToString() : "Usuario Desconocido";
+            int companyId = ObtenerEmpresaSegura();
+            string deletedBy = ObtenerUsuarioSeguro().ToString();
 
             var existingSupplier = await _supplierService.GetByIdAsync(id);
             if (existingSupplier == null || existingSupplier.CompanyId != companyId) return NotFound();
 
             var success = await _supplierService.DeleteAsync(id, deletedBy);
             if (!success) return BadRequest("No se pudo eliminar el proveedor.");
+
             return NoContent();
         }
     }

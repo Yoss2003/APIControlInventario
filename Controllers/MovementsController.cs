@@ -4,29 +4,24 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class MovementsController(IMovementService movementService) : ControllerBase
+    public class MovementsController(IMovementService movementService) : BaseApiController
     {
         private readonly IMovementService _movementService = movementService;
 
         [HttpGet]
         public async Task<IActionResult> GetMovements()
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
+            int companyId = ObtenerEmpresaSegura();
             return Ok(await _movementService.GetAllByCompanyIdAsync(companyId));
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetMovement(int id)
         {
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            int companyId = int.Parse(companyIdHeader!);
-
+            int companyId = ObtenerEmpresaSegura();
             var movement = await _movementService.GetByIdAsync(id);
-            if (movement == null || movement.CompanyId != companyId) return NotFound();
 
+            if (movement == null || movement.CompanyId != companyId) return NotFound();
             return Ok(movement);
         }
 
@@ -35,12 +30,10 @@ namespace InventoryAPI.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-            movement.CompanyId = int.Parse(companyIdHeader!);
-
+            movement.CompanyId = ObtenerEmpresaSegura();
             var success = await _movementService.CreateAsync(movement);
-            if (!success) return BadRequest("No se pudo crear.");
 
+            if (!success) return BadRequest("No se pudo crear.");
             return CreatedAtAction(nameof(GetMovement), new { id = movement.Id }, movement);
         }
     }

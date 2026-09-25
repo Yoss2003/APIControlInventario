@@ -4,9 +4,7 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class HistoryLogsController(IHistoryLogService historyLogService) : ControllerBase
+    public class HistoryLogsController(IHistoryLogService historyLogService) : BaseApiController
     {
         private readonly IHistoryLogService _historyLogService = historyLogService;
 
@@ -15,8 +13,7 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                int companyId = int.Parse(companyIdHeader!);
+                int companyId = ObtenerEmpresaSegura();
                 return Ok(await _historyLogService.GetAllByCompanyIdAsync(companyId));
             }
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
@@ -27,10 +24,9 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                int companyId = int.Parse(companyIdHeader!);
-
+                int companyId = ObtenerEmpresaSegura();
                 var historyLog = await _historyLogService.GetByIdAsync(id);
+
                 if (historyLog == null || historyLog.CompanyId != companyId) return NotFound();
 
                 return Ok(historyLog);
@@ -44,12 +40,10 @@ namespace InventoryAPI.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                historyLog.CompanyId = int.Parse(companyIdHeader!);
-
+                historyLog.CompanyId = ObtenerEmpresaSegura();
                 var success = await _historyLogService.CreateAsync(historyLog);
-                if (!success) return BadRequest("No se pudo crear.");
 
+                if (!success) return BadRequest("No se pudo crear.");
                 return CreatedAtAction(nameof(GetHistoryLog), new { id = historyLog.Id }, historyLog);
             }
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }

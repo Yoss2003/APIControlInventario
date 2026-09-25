@@ -1,34 +1,15 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services.IServices;
-
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class SecurityQuestionsController(ISecurityQuestionService securityQuestionService) : ControllerBase
+    public class SecurityQuestionsController(ISecurityQuestionService service) : BaseApiController
     {
-        private readonly ISecurityQuestionService _securityQuestionService = securityQuestionService;
-
-        // GET: api/SecurityQuestions
-        [HttpGet]
-        public async Task<IActionResult> GetSecurityQuestions()
-        {
-            var questions = await _securityQuestionService.GetAllAsync();
-            return Ok(questions);
-        }
-
-        // GET: api/SecurityQuestions/5
+        [HttpGet] public async Task<IActionResult> GetSecurityQuestions() => Ok(await service.GetAllAsync());
         [HttpGet("{id}")]
         public async Task<IActionResult> GetSecurityQuestion(int id)
         {
-            var question = await _securityQuestionService.GetByIdAsync(id);
-
-            if (question == null)
-            {
-                return NotFound();
-            }
-
-            return Ok(question);
+            var question = await service.GetByIdAsync(id);
+            return question == null ? NotFound() : Ok(question);
         }
     }
 }

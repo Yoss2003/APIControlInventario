@@ -4,9 +4,7 @@ using ControlInventario.Shared.Models;
 
 namespace InventoryAPI.Controllers
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class SalesController(ISaleService saleService) : ControllerBase
+    public class SalesController(ISaleService saleService) : BaseApiController
     {
         private readonly ISaleService _saleService = saleService;
 
@@ -15,9 +13,7 @@ namespace InventoryAPI.Controllers
         {
             try
             {
-                if (!Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader)) return BadRequest("Falta indicar la sucursal.");
-                int companyId = int.Parse(companyIdHeader!);
-
+                int companyId = ObtenerEmpresaSegura();
                 var ventas = await _saleService.GetAllByCompanyIdAsync(companyId);
                 return Ok(ventas);
             }
@@ -29,21 +25,9 @@ namespace InventoryAPI.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            int companyId;
-            if (Request.Headers.TryGetValue("X-Company-Id", out var companyIdHeader))
-            {
-                companyId = int.Parse(companyIdHeader!);
-            }
-            else if (nuevaVenta.CompanyId > 0)
-            {
-                companyId = nuevaVenta.CompanyId;
-            }
-            else
-            {
-                return BadRequest(new { Message = "Falta indicar la empresa (X-Company-Id)." });
-            }
-
+            int companyId = ObtenerEmpresaSegura();
             nuevaVenta.CompanyId = companyId;
+
             if (nuevaVenta.SaleDetails != null)
             {
                 foreach (var detail in nuevaVenta.SaleDetails)
@@ -52,13 +36,14 @@ namespace InventoryAPI.Controllers
                 }
             }
 
-            var result = await _saleService.ProcessSaleAsync(nuevaVenta);
-            if (!result.Success)
+            var (Success, Message) = await _saleService.ProcessSaleAsync(nuevaVenta);
+            if (!Success)
             {
-                if (result.Message.Contains("crítico")) return StatusCode(500, new { Message = result.Message });
-                return BadRequest(new { Message = result.Message });
+                if (Message.Contains("crítico")) return StatusCode(500, new { Message });
+                return BadRequest(new { Message });
             }
-            return Ok(new { result.Message });
+
+            return Ok(new { Message });
         }
     }
 }

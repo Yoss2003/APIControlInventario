@@ -3,13 +3,10 @@ using InventoryAPI.Services.IServices;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class PermissionsController(IPermissionService permissionService) : ControllerBase
+    public class PermissionsController(IPermissionService permissionService) : BaseApiController
     {
         private readonly IPermissionService _permissionService = permissionService;
 
-        // GET: api/Permissions
         [HttpGet]
         public async Task<IActionResult> GetPermissions()
         {

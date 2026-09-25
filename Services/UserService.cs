@@ -1,18 +1,22 @@
-﻿using ControlInventario.Shared.Models;
+﻿using ControlInventario.Shared.Helpers;
+using ControlInventario.Shared.Models;
 using ControlInventario.Shared.Models.DTO;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
 using OtpNet;
 using System.Diagnostics;
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Mail;
-using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text;
 
 namespace InventoryAPI.Services
 {
-    public class UserService(IWorkFlow workFlow) : WorkContainer<User>(workFlow), IUserService
+    public class UserService(IWorkFlow workFlow, IConfiguration configuration) : WorkContainer<User>(workFlow), IUserService
     {
         public async Task<IEnumerable<UserDTO>> GetUsersDtoAsync()
         {
@@ -51,7 +55,8 @@ namespace InventoryAPI.Services
                 JobPositionId = u.Employee?.JobPositionId ?? 0,
                 AreaId = u.Employee?.AreaId ?? 0,
                 ContractTypeId = u.Employee?.ContractTypeId ?? 0,
-                RoleId = u.RoleId
+                RoleId = u.RoleId,
+                CompanyId = u.CompanyId ?? 1
             };
         }
 
@@ -69,7 +74,7 @@ namespace InventoryAPI.Services
             userDb.IsActive = userActualizado.IsActive;
 
             if (userActualizado.RoleId > 0) userDb.RoleId = userActualizado.RoleId;
-            if (!string.IsNullOrWhiteSpace(userActualizado.Password)) userDb.Password = userActualizado.Password;
+            if (!string.IsNullOrWhiteSpace(userActualizado.Password)) userDb.Password = SecurityHelper.GenerarHashSHA256(userActualizado.Password);
             userDb.MustChangePassword = userActualizado.MustChangePassword;
 
             if (userActualizado.Employee != null)
@@ -77,9 +82,14 @@ namespace InventoryAPI.Services
                 userDb.Employee ??= new Employee();
                 userDb.Employee.FirstName = userActualizado.Employee.FirstName;
                 userDb.Employee.LastName = userActualizado.Employee.LastName;
+                userDb.Employee.BirthDate = userActualizado.Employee.BirthDate;
+                userDb.Employee.HireDate = userActualizado.Employee.HireDate;
+                userDb.Employee.Age = userActualizado.Employee.Age;
                 if (userActualizado.Employee.AreaId > 0) userDb.Employee.AreaId = userActualizado.Employee.AreaId;
                 if (userActualizado.Employee.JobPositionId > 0) userDb.Employee.JobPositionId = userActualizado.Employee.JobPositionId;
                 if (userActualizado.Employee.ContractTypeId > 0) userDb.Employee.ContractTypeId = userActualizado.Employee.ContractTypeId;
+
+                userDb.Employee.CompanyId = userDb.CompanyId ?? 1;
             }
 
             try
@@ -117,12 +127,13 @@ namespace InventoryAPI.Services
             user.StatusId = 2;
             user.Employee.StatusId = 2;
             user.Role = null;
+            user.Employee.CompanyId = user.CompanyId ?? 1;
 
             // 1. GUARDAMOS LA CLAVE PLANA PARA EL CORREO
             string clavePlana = user.Password!;
 
             // 2. ENCRIPTAMOS LA CLAVE PARA LA BASE DE DATOS (SHA256)
-            user.Password = GenerarHashSHA256(clavePlana);
+            user.Password = SecurityHelper.GenerarHashSHA256(clavePlana);
 
             if (!string.IsNullOrEmpty(user.ProfilePictureUrl) && user.ProfilePictureUrl.Length > 500)
             {
@@ -171,7 +182,7 @@ namespace InventoryAPI.Services
                         UserId = user.Id,
                         Username = user.Username!,
                         Alias = "Inventario Principal",
-                        CompanyId = user.CompanyId ?? 1
+                        CompanyId = user.Employee.CompanyId
                     };
 
                     await _workFlow.Repository<Inventory>().AddAsync(nuevoInventario);
@@ -209,18 +220,6 @@ namespace InventoryAPI.Services
             }
         }
 
-        // MÉTODO PARA ENCRIPTAR CONTRASEÑA
-        private static string GenerarHashSHA256(string textoPlano)
-        {
-            byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(textoPlano));
-            StringBuilder builder = new();
-            for (int i = 0; i < bytes.Length; i++)
-            {
-                builder.Append(bytes[i].ToString("X2"));
-            }
-            return builder.ToString();
-        }
-
         public async Task<(bool Success, User? User, string Message, bool Requires2FA, bool RequirePasswordChange, bool AccountPending)> LoginAsync(LoginRequestDTO request)
         {
             var usersMatch = await _workFlow.Repository<User>().GetAllWithIncludeAsync(
@@ -229,7 +228,7 @@ namespace InventoryAPI.Services
                 u => u.Company!
             );
 
-            string claveHasheada = GenerarHashSHA256(request.Password);
+            string claveHasheada = SecurityHelper.GenerarHashSHA256(request.Password);
 
             var targetUser = usersMatch.FirstOrDefault(u => u.Username == request.Username && string.Equals(u.Password, claveHasheada, StringComparison.OrdinalIgnoreCase));
 
@@ -257,10 +256,9 @@ namespace InventoryAPI.Services
             }
 
             if (targetUser.MustChangePassword)
-            {
                 return (true, targetUser, "Debe cambiar contraseña", false, true, false);
-            }
 
+            targetUser.Token = GenerarTokenJWT(targetUser);
             return (true, targetUser, "Login exitoso", false, false, false);
         }
 
@@ -268,7 +266,7 @@ namespace InventoryAPI.Services
         {
             var user = await _workFlow.Repository<User>().GetByIdAsync(userId);
             if (user == null) return (false, null, "Usuario no encontrado.");
-            user.Password = newPassword;
+            user.Password = SecurityHelper.GenerarHashSHA256(newPassword);
             user.MustChangePassword = false;
             await _workFlow.CompleteAsync();
             return (true, user, "Contraseña cambiada con éxito.");
@@ -533,6 +531,29 @@ namespace InventoryAPI.Services
             {
                 Debug.WriteLine($"[EMAIL ERROR]: {ex.Message}");
             }
+        }
+
+        private string GenerarTokenJWT(User user)
+        {
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration["Jwt:Key"]!));
+            var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, user.Username ?? ""),
+                new Claim("UserId", user.Id.ToString()),
+                new Claim("CompanyId", (user.CompanyId ?? 1).ToString()),
+                new Claim("RoleId", user.RoleId.ToString())
+            };
+
+            var token = new JwtSecurityToken(
+                issuer: configuration["Jwt:Issuer"],
+                audience: configuration["Jwt:Audience"],
+                claims: claims,
+                expires: DateTime.Now.AddDays(7),
+                signingCredentials: credentials);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
         }
     }
 }

@@ -1,13 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services.IServices;
-using System;
-using System.Threading.Tasks;
 
 namespace InventoryAPI.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class ExchangeRatesController(IExchangeRateService exchangeRateService) : ControllerBase
+    public class ExchangeRatesController(IExchangeRateService exchangeRateService) : BaseApiController
     {
         private readonly IExchangeRateService _exchangeRateService = exchangeRateService;
 
@@ -24,7 +20,6 @@ namespace InventoryAPI.Controllers
                 return StatusCode(500, $"Error interno: {ex.Message}");
             }
         }
-
 
         [HttpGet("today/{currency?}")]
         public async Task<IActionResult> GetTodayExchangeRate(string? currency)
