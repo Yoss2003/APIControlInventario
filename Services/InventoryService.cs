@@ -46,7 +46,7 @@ namespace InventoryAPI.Services
                     InventoryId = request.InventoryId,
                     UserId = guestUser.Id,
                     AccessLevel = request.AccessLevel,
-                    SharedDate = DateTime.Now
+                    SharedDate = DateTime.UtcNow
                 };
 
                 await _workFlow.Repository<SharedInventory>().AddAsync(newShare);
@@ -74,7 +74,7 @@ namespace InventoryAPI.Services
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error al listar compartidos: {ex.Message}");
-                return new List<SharedInventory>();
+                return [];
             }
         }
 
@@ -82,7 +82,6 @@ namespace InventoryAPI.Services
         {
             try
             {
-                // 3. CORRECCIÓN AQUÍ: Usamos FindAsync y luego FirstOrDefault
                 var sharedRecords = await _workFlow.Repository<SharedInventory>()
                                                   .FindAsync(s => s.Id == sharedInventoryId);
 

@@ -9,14 +9,14 @@ namespace InventoryAPI.Services
     {
         public async Task<(bool Success, string Message)> ProcessSaleAsync(Sale nuevaVenta)
         {
-            if (nuevaVenta == null || nuevaVenta.SaleDetails == null || !nuevaVenta.SaleDetails.Any())
+            if (nuevaVenta == null || nuevaVenta.SaleDetails == null || nuevaVenta.SaleDetails.Count == 0)
             {
                 return (false, "Datos de venta inválidos o carrito vacío.");
             }
 
             try
             {
-                nuevaVenta.SaleDate = DateTime.Now;
+                nuevaVenta.SaleDate = DateTime.UtcNow;
 
                 var userMatch = await _workFlow.Repository<User>().FindAsync(u => u.Id == nuevaVenta.UserId);
                 var vendedorUser = userMatch.FirstOrDefault();
@@ -42,7 +42,7 @@ namespace InventoryAPI.Services
                     if (articulo.Stock < detalle.Quantity) return (false, $"Stock insuficiente para {articulo.Name}.");
 
                     articulo.Stock -= (decimal)detalle.Quantity;
-                    articulo.ModificationDate = DateTime.Now;
+                    articulo.ModificationDate = DateTime.UtcNow;
 
                     var nuevoMovimiento = new Movement
                     {
@@ -50,7 +50,7 @@ namespace InventoryAPI.Services
                         ArticleId = articulo.Id,
                         EmployeeId = vendedorEmpleado.Id,
                         ActionId = 2,
-                        MovementDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                        MovementDate = DateTime.UtcNow,
                         Observation = nuevaVenta.Notes,
                         Amount = detalle.Quantity,
                         SalePrice = detalle.UnitPrice,
@@ -62,7 +62,7 @@ namespace InventoryAPI.Services
                     var nuevoLog = new HistoryLog
                     {
                         CompanyId = nuevaVenta.CompanyId,
-                        LogDate = DateTime.Now,
+                        LogDate = DateTime.UtcNow,
                         Username = nombreVendedor,
                         ModuleName = "Ventas",
                         ActionName = "Venta",

@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
+using ControlInventario.Shared.Models.DTO;
 
 namespace InventoryAPI.Controllers
 {
@@ -44,6 +45,27 @@ namespace InventoryAPI.Controllers
             if (!success) return BadRequest("No se pudo actualizar.");
 
             return NoContent();
+        }
+
+        [HttpPut("{id}/UpdateWithUser")]
+        public async Task<IActionResult> UpdateEmployeeWithUser(int id, [FromBody] EmployeeUpdateDTO dto)
+        {
+            if (dto == null || dto.Employee == null)
+                return BadRequest("Datos inválidos.");
+
+            if (id != dto.Employee.Id)
+                return BadRequest("El ID del empleado no coincide con la petición.");
+
+            int companyId = ObtenerEmpresaSegura();
+            if (dto.Employee.CompanyId <= 0)
+                dto.Employee.CompanyId = companyId;
+
+            var (success, message) = await _employeeService.UpdateEmployeeWithUserAsync(id, dto);
+
+            if (!success)
+                return BadRequest(message);
+
+            return Ok(new { mensaje = message });
         }
 
         [HttpPost]

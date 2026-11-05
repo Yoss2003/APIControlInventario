@@ -20,7 +20,7 @@ namespace InventoryAPI.Services
 
             int diasGracia = perfil.GraceDays ?? 0;
             decimal porcentajeMoraDiaria = (decimal)(perfil.LateFeePercentage ?? 0f);
-            DateTime hoy = DateTime.Today;
+            DateTime hoy = DateTime.UtcNow.Date;
 
             foreach (var cuenta in cuentas.Where(c => c.Status == "Pending"))
             {

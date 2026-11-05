@@ -6,10 +6,11 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace InventoryAPI.Controllers
 {
-    public class UsersController(IUserService userService, IWebHostEnvironment env) : BaseApiController
+    public class UsersController(IUserService userService, IWebHostEnvironment env, IFcmNotificationService fcmNotificationService) : BaseApiController
     {
         private readonly IUserService _userService = userService;
         private readonly IWebHostEnvironment _env = env;
+        private readonly IFcmNotificationService _fcmNotificationService = fcmNotificationService;
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<UserDTO>>> GetUsers()
@@ -208,6 +209,60 @@ namespace InventoryAPI.Controllers
             Response.ContentType = "text/html; charset=utf-8";
             await Response.WriteAsync(htmlResponse);
             return new EmptyResult();
+        }
+
+        [HttpPut("{id}/fcm-token")]
+        [AllowAnonymous]
+        public async Task<IActionResult> UpdateFcmToken(int id, [FromBody] string fcmToken)
+        {
+            if (string.IsNullOrWhiteSpace(fcmToken))
+                return BadRequest(new { mensaje = "El token no puede estar vacío." });
+
+            bool result = await _userService.UpdateFcmTokenAsync(id, fcmToken);
+
+            if (result)
+                return Ok(new { mensaje = "Token de notificaciones actualizado correctamente." });
+
+            return NotFound(new { mensaje = "Usuario no encontrado." });
+        }
+
+        [AllowAnonymous]
+        [HttpPost("test-push")]
+        public async Task<IActionResult> TestPushNotification([FromBody] string fcmToken)
+        {
+            var path = Path.Combine(_env.ContentRootPath, "firebase-key.json");
+            if (!System.IO.File.Exists(path))
+                return StatusCode(500, new { mensaje = $"🔥 ERROR 1: Somee NO encuentra el archivo clave. Ruta buscada: {path}" });
+
+            if (FirebaseAdmin.FirebaseApp.DefaultInstance == null)
+                return StatusCode(500, new { mensaje = "🔥 ERROR 2: El archivo existe, pero Google rechazó las credenciales al intentar inicializar." });
+
+            try
+            {
+                bool result = await _fcmNotificationService.SendPushNotificationAsync(
+                    fcmToken,
+                    "¡Prueba de Fuego! 🔥",
+                    "Si estás leyendo esto, Somee ya puede despertar a tu celular.");
+
+                if (result)
+                    return Ok(new { mensaje = "¡Notificación enviada con éxito a Firebase!" });
+
+                return StatusCode(500, new { mensaje = "🔥 ERROR 3: Firebase arrancó, pero falló el envío (revisa FcmNotificationService)." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { mensaje = $"🔥 ERROR 4 (Excepción Crítica): {ex.Message}" });
+            }
+        }
+
+        [HttpPost("{id}/resend-welcome")]
+        public async Task<IActionResult> ResendWelcomeEmail(int id)
+        {
+            var (Success, Message) = await _userService.ResendWelcomeEmailAsync(id);
+
+            if (!Success) return BadRequest(new { mensaje = Message });
+
+            return Ok(new { mensaje = Message });
         }
 
         public class SmtpTestRequest

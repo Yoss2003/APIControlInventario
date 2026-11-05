@@ -2,12 +2,7 @@
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
-using System;
-using System.Diagnostics;
-using System.Linq;
-using System.Net.Http;
 using System.Text.Json;
-using System.Threading.Tasks;
 
 namespace InventoryAPI.Services
 {
@@ -22,7 +17,6 @@ namespace InventoryAPI.Services
 
             try
             {
-                // 1. CACHÉ LOCAL: Buscamos primero en la base de datos (con IWorkFlow)
                 var localMatch = await _workFlow.Repository<Supplier>().FindAsync(s => s.Ruc == ruc);
                 var proveedorExistente = localMatch.FirstOrDefault();
 
@@ -31,20 +25,28 @@ namespace InventoryAPI.Services
                     return (true, proveedorExistente, "Encontrado en caché local.");
                 }
 
-                string apiToken = "sk_13723.G2u2hnJk9acgY3uFHZMYsJliHho0GXu4";
+                var parametroToken = await _workFlow.Repository<Parameters>()
+                    .FindAsync(p => p.ParameterType == "API_KEY" && p.Name == "Decolecta_Token");
 
-                // 2. INTENTO 1: Endpoint Avanzado (/full)
-                Debug.WriteLine($"[INTENTO 1] Consultando RUC Avanzado para {ruc}...");
-                string urlAvanzada = $"https://api.decolecta.com/v1/sunat/ruc/full?numero={ruc}";
+                string apiToken = parametroToken.FirstOrDefault()?.Description ?? "";
 
-                var request = new HttpRequestMessage(HttpMethod.Get, urlAvanzada);
+                if (string.IsNullOrWhiteSpace(apiToken))
+                {
+                    return (false, null, "El servicio de SUNAT está inactivo. El administrador debe configurar el Token desde la App.");
+                }
+
+                // 3. CONSULTA A DECOLECTA CON EL TOKEN DINÁMICO
+                string url = $"https://api.decolecta.com/v1/sunat/ruc?numero={ruc}";
+
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
+                request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
 
                 var response = await httpClient.SendAsync(request);
+                string jsonString = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
                 {
-                    string jsonString = await response.Content.ReadAsStringAsync();
                     using var doc = JsonDocument.Parse(jsonString);
                     var root = doc.RootElement;
 
@@ -52,8 +54,8 @@ namespace InventoryAPI.Services
                     {
                         InventoryId = 0,
                         Ruc = ruc,
-                        BusinessName = root.TryGetProperty("razon_social", out var rz) ? rz.GetString() ?? "SIN NOMBRE LEGAL" : "SIN NOMBRE LEGAL",
-                        Address = root.TryGetProperty("direccion", out var dir) ? dir.GetString() ?? "Dirección no registrada" : "Dirección no registrada",
+                        BusinessName = root.TryGetProperty("razon_social", out var rz) ? rz.GetString() ?? "SIN NOMBRE" : "SIN NOMBRE",
+                        Address = root.TryGetProperty("direccion", out var dir) ? dir.GetString() ?? "Sin dirección" : "Sin dirección",
                         StatusId = 1,
                         Estado = root.TryGetProperty("estado", out var est) ? est.GetString() ?? "ACTIVO" : "ACTIVO",
                         Condicion = root.TryGetProperty("condicion", out var cond) ? cond.GetString() ?? "HABIDO" : "HABIDO",
@@ -62,54 +64,27 @@ namespace InventoryAPI.Services
                         Departamento = root.TryGetProperty("departamento", out var dep) ? dep.GetString() ?? "" : ""
                     };
 
-                    await _workFlow.Repository<Supplier>().AddAsync(nuevoProveedor);
-                    await _workFlow.CompleteAsync();
-                    return (true, nuevoProveedor, "RUC localizado (Avanzado) y guardado en local.");
+                    return (true, nuevoProveedor, "RUC localizado y guardado.");
                 }
-
-                // 3. INTENTO 2 (FALLBACK): Endpoint Básico
-                Debug.WriteLine($"[FALLBACK] Intentando endpoint básico para {ruc}...");
-                string urlBasica = $"https://api.decolecta.com/v1/sunat/ruc?numero={ruc}";
-
-                var requestBasico = new HttpRequestMessage(HttpMethod.Get, urlBasica);
-                requestBasico.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
-
-                var responseBasica = await httpClient.SendAsync(requestBasico);
-
-                if (responseBasica.IsSuccessStatusCode)
+                else
                 {
-                    string jsonString = await responseBasica.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(jsonString);
-                    var root = doc.RootElement;
-
-                    string razonSocial = (root.TryGetProperty("razonSocial", out var rz1) ? rz1.GetString() : null)
-                                      ?? (root.TryGetProperty("razon_social", out var rz2) ? rz2.GetString() : null)
-                                      ?? "SIN NOMBRE LEGAL";
-
-                    var nuevoProveedorBasico = new Supplier
+                    string errorDetalle = "Desconocido";
+                    try
                     {
-                        InventoryId = 0,
-                        Ruc = ruc,
-                        BusinessName = razonSocial,
-                        Address = root.TryGetProperty("direccion", out var dir1) ? dir1.GetString() ?? "Dirección no registrada" : "Dirección no registrada",
-                        StatusId = 1,
-                        Estado = root.TryGetProperty("estado", out var est1) ? est1.GetString() ?? "ACTIVO" : "ACTIVO",
-                        Condicion = root.TryGetProperty("condicion", out var cond1) ? cond1.GetString() ?? "HABIDO" : "HABIDO",
-                        Distrito = root.TryGetProperty("distrito", out var dist1) ? dist1.GetString() ?? "" : "",
-                        Provincia = root.TryGetProperty("provincia", out var prov1) ? prov1.GetString() ?? "" : "",
-                        Departamento = root.TryGetProperty("departamento", out var dep1) ? dep1.GetString() ?? "" : ""
-                    };
+                        using var errDoc = JsonDocument.Parse(jsonString);
+                        if (errDoc.RootElement.TryGetProperty("message", out var msg))
+                        {
+                            errorDetalle = msg.GetString() ?? "Sin mensaje";
+                        }
+                    }
+                    catch { errorDetalle = "Error de conexión."; }
 
-                    await _workFlow.Repository<Supplier>().AddAsync(nuevoProveedorBasico);
-                    await _workFlow.CompleteAsync();
-                    return (true, nuevoProveedorBasico, "RUC localizado (Básico) y guardado en local.");
+                    return (false, null, $"Decolecta rechazó la consulta ({(int)response.StatusCode}): {errorDetalle}");
                 }
-
-                return (false, null, $"El RUC {ruc} no fue localizado en SUNAT (Fallo en consulta avanzada y básica).");
             }
             catch (Exception ex)
             {
-                return (false, null, $"Falla crítica en el ecosistema en cascada de RUC: {ex.Message}");
+                return (false, null, $"Falla en el servidor interno: {ex.Message}");
             }
         }
     }

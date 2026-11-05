@@ -9,6 +9,7 @@
       "InventoryAPI/1.0.0": {
         "dependencies": {
           "ControlInventario.Shared": "1.0.0",
+          "FirebaseAdmin": "3.7.0",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "10.0.12",
           "Microsoft.EntityFrameworkCore.SqlServer": "10.0.11",
           "NuGet.Packaging": "7.9.0",
@@ -43,6 +44,77 @@
           "lib/net8.0/Azure.Identity.dll": {
             "assemblyVersion": "1.17.1.0",
             "fileVersion": "1.1700.125.56903"
+          }
+        }
+      },
+      "FirebaseAdmin/3.7.0": {
+        "dependencies": {
+          "Google.Api.Gax.Rest": "4.13.1",
+          "Google.Apis.Auth": "1.73.0"
+        },
+        "runtime": {
+          "lib/net6.0/FirebaseAdmin.dll": {
+            "assemblyVersion": "3.7.0.0",
+            "fileVersion": "3.7.0.0"
+          }
+        }
+      },
+      "Google.Api.Gax/4.13.1": {
+        "dependencies": {
+          "Microsoft.Bcl.AsyncInterfaces": "8.0.0",
+          "Newtonsoft.Json": "13.0.4"
+        },
+        "runtime": {
+          "lib/netstandard2.0/Google.Api.Gax.dll": {
+            "assemblyVersion": "4.13.1.0",
+            "fileVersion": "4.13.1.0"
+          }
+        }
+      },
+      "Google.Api.Gax.Rest/4.13.1": {
+        "dependencies": {
+          "Google.Api.Gax": "4.13.1",
+          "Google.Apis.Auth": "1.73.0"
+        },
+        "runtime": {
+          "lib/netstandard2.0/Google.Api.Gax.Rest.dll": {
+            "assemblyVersion": "4.13.1.0",
+            "fileVersion": "4.13.1.0"
+          }
+        }
+      },
+      "Google.Apis/1.73.0": {
+        "dependencies": {
+          "Google.Apis.Core": "1.73.0"
+        },
+        "runtime": {
+          "lib/net6.0/Google.Apis.dll": {
+            "assemblyVersion": "1.73.0.0",
+            "fileVersion": "1.73.0.0"
+          }
+        }
+      },
+      "Google.Apis.Auth/1.73.0": {
+        "dependencies": {
+          "Google.Apis": "1.73.0",
+          "Google.Apis.Core": "1.73.0",
+          "System.Management": "7.0.2"
+        },
+        "runtime": {
+          "lib/net6.0/Google.Apis.Auth.dll": {
+            "assemblyVersion": "1.73.0.0",
+            "fileVersion": "1.73.0.0"
+          }
+        }
+      },
+      "Google.Apis.Core/1.73.0": {
+        "dependencies": {
+          "Newtonsoft.Json": "13.0.4"
+        },
+        "runtime": {
+          "lib/net6.0/Google.Apis.Core.dll": {
+            "assemblyVersion": "1.73.0.0",
+            "fileVersion": "1.73.0.0"
           }
         }
       },
@@ -492,6 +564,14 @@
           }
         }
       },
+      "System.CodeDom/7.0.0": {
+        "runtime": {
+          "lib/net7.0/System.CodeDom.dll": {
+            "assemblyVersion": "7.0.0.0",
+            "fileVersion": "7.0.22.51805"
+          }
+        }
+      },
       "System.Configuration.ConfigurationManager/9.0.11": {
         "dependencies": {
           "System.Security.Cryptography.ProtectedData": "9.0.11"
@@ -512,6 +592,25 @@
           "lib/net10.0/System.IdentityModel.Tokens.Jwt.dll": {
             "assemblyVersion": "8.19.2.0",
             "fileVersion": "8.19.2.26195"
+          }
+        }
+      },
+      "System.Management/7.0.2": {
+        "dependencies": {
+          "System.CodeDom": "7.0.0"
+        },
+        "runtime": {
+          "lib/net7.0/System.Management.dll": {
+            "assemblyVersion": "7.0.0.2",
+            "fileVersion": "7.0.723.27404"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/net7.0/System.Management.dll": {
+            "rid": "win",
+            "assetType": "runtime",
+            "assemblyVersion": "7.0.0.2",
+            "fileVersion": "7.0.723.27404"
           }
         }
       },
@@ -563,6 +662,48 @@
       "sha512": "sha512-MSZkBrctcpiGxs9Cvr2VKKoN6qFLZlP3I6xuCWJ9iTgitI5Rgxtk5gfOSpXPZE3+CJmZ/mnqpQyGyjawFn5Vvg==",
       "path": "azure.identity/1.17.1",
       "hashPath": "azure.identity.1.17.1.nupkg.sha512"
+    },
+    "FirebaseAdmin/3.7.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-9XRXSMGmEBarZm1ojMDqRUDUvWGKwDiJh52D19TqUDOdNu43ZMnGg5k8Az6A758rZu5rV7qo2sLofH0J+OEcyg==",
+      "path": "firebaseadmin/3.7.0",
+      "hashPath": "firebaseadmin.3.7.0.nupkg.sha512"
+    },
+    "Google.Api.Gax/4.13.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-ujDpZk7O2VqAEIqcSlhH0FKzVpGZWly/qcNjHxpNUrL445Tei9PHnu4V1pwW2WDiMDvo3TpL1Bi4DeU525Afrg==",
+      "path": "google.api.gax/4.13.1",
+      "hashPath": "google.api.gax.4.13.1.nupkg.sha512"
+    },
+    "Google.Api.Gax.Rest/4.13.1": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wDfFZXKoHC6sy+Yfub/4cLQOb5ozBVPqDOrxCUAeTfku4d96ILqgzulJSdkPHbiT3oWB3hlYTdJgUwNSJjyo+A==",
+      "path": "google.api.gax.rest/4.13.1",
+      "hashPath": "google.api.gax.rest.4.13.1.nupkg.sha512"
+    },
+    "Google.Apis/1.73.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-TnCjEyV2aCLQ6Zl40OCbEJULDuEkEWc6C/g81KYw5l1PqGo+G7pFZrV+YH8XgUL0JRUanz+IrUp8SsKF4dzkqg==",
+      "path": "google.apis/1.73.0",
+      "hashPath": "google.apis.1.73.0.nupkg.sha512"
+    },
+    "Google.Apis.Auth/1.73.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wEu12uhnRv3zrPBSqv4E2vPH6lYLtc1RPAnU9MJRCMFlBVwZ7Lnq3NfbYXi6VG7EurkYInTaMpeBZkbM/HrAog==",
+      "path": "google.apis.auth/1.73.0",
+      "hashPath": "google.apis.auth.1.73.0.nupkg.sha512"
+    },
+    "Google.Apis.Core/1.73.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-vSc7CY4KCP7HE4QTElDx/ExnGLbg9kXb89MS6cdvI+0D4sxvTYb16vGtXmF2jSDMV3iDmykSXdIUPTz8TDS6gg==",
+      "path": "google.apis.core/1.73.0",
+      "hashPath": "google.apis.core.1.73.0.nupkg.sha512"
     },
     "Microsoft.AspNetCore.Authentication.JwtBearer/10.0.12": {
       "type": "package",
@@ -802,6 +943,13 @@
       "path": "system.clientmodel/1.8.0",
       "hashPath": "system.clientmodel.1.8.0.nupkg.sha512"
     },
+    "System.CodeDom/7.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-GLltyqEsE5/3IE+zYRP5sNa1l44qKl9v+bfdMcwg+M9qnQf47wK3H0SUR/T+3N4JEQXF3vV4CSuuo0rsg+nq2A==",
+      "path": "system.codedom/7.0.0",
+      "hashPath": "system.codedom.7.0.0.nupkg.sha512"
+    },
     "System.Configuration.ConfigurationManager/9.0.11": {
       "type": "package",
       "serviceable": true,
@@ -815,6 +963,13 @@
       "sha512": "sha512-gqhDC/icByKEutygpr+OFgAmjwTVowyzFjWB8K0q1ww8uFj5a1BQNL+QvijUl9uhq4p8OdDwcAIrjVC+eC9FVA==",
       "path": "system.identitymodel.tokens.jwt/8.19.2",
       "hashPath": "system.identitymodel.tokens.jwt.8.19.2.nupkg.sha512"
+    },
+    "System.Management/7.0.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-/qEUN91mP/MUQmJnM5y5BdT7ZoPuVrtxnFlbJ8a3kBJGhe2wCzBfnPFtK2wTtEEcf3DMGR9J00GZZfg6HRI6yA==",
+      "path": "system.management/7.0.2",
+      "hashPath": "system.management.7.0.2.nupkg.sha512"
     },
     "System.Memory.Data/8.0.1": {
       "type": "package",

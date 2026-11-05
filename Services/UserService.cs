@@ -171,14 +171,14 @@ namespace InventoryAPI.Services
 
                 if (esAltoNivel)
                 {
-                    string fechaActual = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss");
-                    string prefijoFecha = DateTime.Now.ToString("ddMM");
+                    string fechaActual = DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss");
+                    string prefijoFecha = DateTime.UtcNow.ToString("ddMM");
 
                     var nuevoInventario = new Inventory
                     {
                         InventoryName = $"{user.Username}_Invent_{prefijoFecha}",
-                        CreationDate = fechaActual,
-                        ModificationDate = fechaActual,
+                        CreationDate = DateTime.UtcNow,
+                        ModificationDate = DateTime.UtcNow,
                         UserId = user.Id,
                         Username = user.Username!,
                         Alias = "Inventario Principal",
@@ -195,7 +195,7 @@ namespace InventoryAPI.Services
                         InventoryId = user.AssignedInventoryId.Value,
                         UserId = user.Id,
                         AccessLevel = user.RoleId == 5 ? SharedInventory.AccessMode.Lector : SharedInventory.AccessMode.Editor,
-                        SharedDate = DateTime.Now,
+                        SharedDate = DateTime.UtcNow,
                         CompanyId = user.CompanyId ?? 1
                     };
 
@@ -550,10 +550,48 @@ namespace InventoryAPI.Services
                 issuer: configuration["Jwt:Issuer"],
                 audience: configuration["Jwt:Audience"],
                 claims: claims,
-                expires: DateTime.Now.AddDays(7),
+                expires: DateTime.UtcNow.AddDays(7),
                 signingCredentials: credentials);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        public async Task<bool> UpdateFcmTokenAsync(int userId, string fcmToken)
+        {
+            var user = await _workFlow.Repository<User>().GetByIdAsync(userId);
+            if (user == null) return false;
+
+            if (user.FcmToken != fcmToken)
+            {
+                user.FcmToken = fcmToken;
+                _workFlow.Repository<User>().Update(user);
+                await _workFlow.CompleteAsync();
+            }
+            return true;
+        }
+
+        public async Task<(bool Success, string Message)> ResendWelcomeEmailAsync(int id)
+        {
+            var usersMatch = await _workFlow.Repository<User>().GetAllWithIncludeAsync(u => u.Employee!);
+            var userDb = usersMatch.FirstOrDefault(u => u.Id == id);
+
+            if (userDb == null) return (false, "Usuario no encontrado.");
+            if (string.IsNullOrWhiteSpace(userDb.Email)) return (false, "El usuario no tiene un correo asignado.");
+
+            var perfiles = await _workFlow.Repository<Profile>().GetAllAsync();
+            var perfilConfigurado = perfiles.FirstOrDefault(p => !string.IsNullOrEmpty(p.SmtpEmail) && !string.IsNullOrEmpty(p.SmtpPassword));
+
+            if (perfilConfigurado == null) return (false, "El servidor de correos SMTP no está configurado.");
+
+            string nuevaClavePlana = Guid.NewGuid().ToString("N")[..8];
+
+            userDb.Password = SecurityHelper.GenerarHashSHA256(nuevaClavePlana);
+            userDb.MustChangePassword = true;
+            await _workFlow.CompleteAsync();
+
+            _ = EnviarCorreoBienvenidaAsync(userDb, nuevaClavePlana, perfilConfigurado.SmtpEmail!, perfilConfigurado.SmtpPassword!);
+
+            return (true, "Nuevas credenciales generadas y enviadas con éxito.");
         }
     }
 }

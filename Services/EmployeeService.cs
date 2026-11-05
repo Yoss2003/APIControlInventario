@@ -1,4 +1,5 @@
 ﻿using ControlInventario.Shared.Models;
+using ControlInventario.Shared.Models.DTO;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
@@ -56,6 +57,43 @@ namespace InventoryAPI.Services
             _workFlow.Repository<Employee>().Update(existingEmployee);
             var result = await _workFlow.CompleteAsync();
             return result > 0;
+        }
+
+        public async Task<(bool Success, string Message)> UpdateEmployeeWithUserAsync(int id, EmployeeUpdateDTO dto)
+        {
+            try
+            {
+                var employeeDb = await _workFlow.Repository<Employee>().GetByIdAsync(id);
+                if (employeeDb == null) return (false, "Empleado no encontrado.");
+
+                employeeDb.FirstName = dto.Employee.FirstName;
+                employeeDb.LastName = dto.Employee.LastName;
+                employeeDb.DNI = dto.Employee.DNI;
+                employeeDb.JobPositionId = dto.Employee.JobPositionId;
+                employeeDb.AreaId = dto.Employee.AreaId;
+                employeeDb.CompanyId = dto.Employee.CompanyId;
+
+                if (employeeDb.UserId.HasValue && employeeDb.UserId > 0 && !string.IsNullOrWhiteSpace(dto.UpdatedEmail))
+                {
+                    var userDb = await _workFlow.Repository<User>().GetByIdAsync(employeeDb.UserId.Value);
+                    if (userDb != null)
+                    {
+                        userDb.Email = dto.UpdatedEmail;
+                        _workFlow.Repository<User>().Update(userDb);
+                    }
+                }
+
+                _workFlow.Repository<Employee>().Update(employeeDb);
+
+                await _workFlow.CompleteAsync();
+
+                return (true, "Empleado y usuario actualizados correctamente.");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ERROR TRANSACCIÓN EMPLEADO]: {ex.Message}");
+                return (false, "Ocurrió un error interno al actualizar los registros.");
+            }
         }
 
         public override async Task<bool> DeleteAsync(int id, string deletedBy = "Sistema")

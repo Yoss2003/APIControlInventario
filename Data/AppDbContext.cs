@@ -63,6 +63,10 @@ namespace InventoryAPI.Data
             modelBuilder.Entity<Customer>().Ignore(e => e.IsSynced);
             modelBuilder.Entity<Supplier>().Ignore(e => e.IsSynced);
             modelBuilder.Entity<ArticleDetails>().Ignore(e => e.IsSynced);
+
+            modelBuilder.Entity<AccountReceivable>()
+            .Property(a => a.InstallmentAmount)
+            .HasColumnType("decimal(18,2)");
         }
     }
 }
