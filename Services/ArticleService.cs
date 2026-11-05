@@ -21,7 +21,7 @@ namespace InventoryAPI.Services
                     ArticleId = article.Id,
                     EmployeeId = article.LoggedUserId,
                     ActionId = 1,
-                    MovementDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    MovementDate = DateTime.UtcNow,
                     Observation = "Registro inicial del producto en almacén",
                     Amount = article.Stock,
                     SalePrice = article.SalePrice ?? 0m,
@@ -35,7 +35,7 @@ namespace InventoryAPI.Services
 
                 var nuevoLog = new HistoryLog
                 {
-                    LogDate = DateTime.Now,
+                    LogDate = DateTime.UtcNow,
                     Username = nombreUsuario,
                     ModuleName = "Inventario",
                     ActionName = "Creación",
@@ -190,7 +190,7 @@ namespace InventoryAPI.Services
                         ArticleId = existingArticle.Id,
                         EmployeeId = empleadoId,
                         ActionId = diferenciaStock > 0 ? 1 : 2, // 1 = Ingreso, 2 = Salida/Merma
-                        MovementDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                        MovementDate = DateTime.UtcNow,
                         Observation = $"Ajuste de stock automatizado ({(diferenciaStock > 0 ? "+" : "")}{diferenciaStock:0.##})",
                         Amount = Math.Abs(diferenciaStock),
                         SalePrice = 0,

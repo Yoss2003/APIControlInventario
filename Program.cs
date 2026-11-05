@@ -8,8 +8,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
+using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
 
 // Add services to the container.
 builder.Services.AddControllers()
@@ -29,7 +36,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Registro de WorkFlow
 builder.Services.AddScoped<IWorkFlow, WorkFlow>();
@@ -75,6 +82,8 @@ builder.Services.AddScoped<ISaleDetailService, SaleDetailService>();
 builder.Services.AddScoped<ICompanyService, CompanyService>();
 builder.Services.AddScoped<IEmployeePermissionService, EmployeePermissionService>();
 
+builder.Services.AddScoped<IFcmNotificationService, FcmNotificationService>();
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -89,6 +98,42 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
         };
     });
+
+try
+{
+    var firebaseKeyPath = Path.Combine(builder.Environment.ContentRootPath, "firebase-key.json");
+
+    if (File.Exists(firebaseKeyPath))
+    {
+        string jsonCreds = File.ReadAllText(firebaseKeyPath);
+
+    #pragma warning disable CS0618
+        FirebaseApp.Create(new AppOptions()
+        {
+            Credential = GoogleCredential.FromJson(jsonCreds)
+        });
+    #pragma warning restore CS0618
+    }
+    else
+    {
+        Debug.WriteLine($"[FCM WARNING]: Archivo no encontrado en {firebaseKeyPath}");
+    }
+}
+catch (Exception ex)
+{
+    Debug.WriteLine($"[FCM ERROR CRÍTICO]: {ex.Message}");
+}
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAngularApp",
+        policy =>
+        {
+            policy.WithOrigins("http://localhost:4200")
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        });
+});
 
 var app = builder.Build();
 
@@ -105,8 +150,9 @@ else
 }
 
 app.UseStaticFiles();
-
-app.UseHttpsRedirection();
+app.UseRouting();
+//app.UseHttpsRedirection();
+app.UseCors("AllowAngularApp");
 
 app.UseAuthentication();
 app.UseAuthorization();

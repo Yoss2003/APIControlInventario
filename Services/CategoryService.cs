@@ -109,7 +109,7 @@ namespace InventoryAPI.Services
                 categoriaExistente.IsUnique5 = category.IsUnique5;
                 categoriaExistente.IsUnique6 = category.IsUnique6;
 
-                categoriaExistente.ModificationDate = DateTime.Now;
+                categoriaExistente.ModificationDate = DateTime.UtcNow;
                 categoriaExistente.ModificationUser = category.ModificationUser ?? "Admin";
 
                 _workFlow.Repository<Category>().Update(categoriaExistente);
@@ -168,7 +168,7 @@ namespace InventoryAPI.Services
             }
 
             category.IsActive = false;
-            category.DeletionDate = DateTime.Now;
+            category.DeletionDate = DateTime.UtcNow;
             category.DeletionUser = deletedBy;
 
             _workFlow.Repository<Category>().Update(category);

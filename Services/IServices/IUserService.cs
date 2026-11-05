@@ -14,9 +14,11 @@ namespace InventoryAPI.Services.IServices
         Task<(bool Success, User? User, string Message)> ChangeInitialPasswordAsync(int userId, string newPassword);
         Task<(bool Success, string Url, string Message)> UpdatePhotoAsync(int id, string base64Image, string contentRootPath);
         Task<(bool Success, string Secret, string QrUri)> Generate2FAAsync(int id);
-        Task<bool> Enable2FAAsync(int id, string code);
-        Task<bool> Disable2FAAsync(int id);
         Task<(bool Success, string Message)> ApproveEmployeeAsync(int id);
         Task<(bool Success, string Message)> TestEmailConnectionAsync(string email, string password);
+        Task<(bool Success, string Message)> ResendWelcomeEmailAsync(int id);
+        Task<bool> Enable2FAAsync(int id, string code);
+        Task<bool> Disable2FAAsync(int id);
+        Task<bool> UpdateFcmTokenAsync(int userId, string fcmToken);
     }
 }

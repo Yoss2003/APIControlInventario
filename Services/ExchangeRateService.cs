@@ -2,27 +2,21 @@
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace InventoryAPI.Services
 {
-    public class ExchangeRateService : WorkContainer<ExchangeRate>, IExchangeRateService
+    public class ExchangeRateService(IWorkFlow workFlow, HttpClient httpClient, IConfiguration configuration) : WorkContainer<ExchangeRate>(workFlow), IExchangeRateService
     {
-        private readonly HttpClient _httpClient;
-
-        public ExchangeRateService(IWorkFlow workFlow, HttpClient httpClient) : base(workFlow)
-        {
-            _httpClient = httpClient;
-        }
+        private readonly HttpClient _httpClient = httpClient;
 
         public async Task<ExchangeRate> GetTodayExchangeRateAsync(string? currency)
         {
             string monedaBase = string.IsNullOrWhiteSpace(currency) ? "USD" : currency.Trim().ToUpper();
-            DateTime hoy = DateTime.Today;
+            DateTime hoy = DateTime.UtcNow.Date;
 
-            // 1. CACHÉ LOCAL: Buscamos si ya guardamos la cotización de esa moneda hoy
-            var listaLocales = await _workFlow.Repository<ExchangeRate>()
-                .FindAsync(ex => ex.Date.Date == hoy && ex.BaseCurrency == monedaBase);
+            var listaLocales = await _workFlow.Repository<ExchangeRate>().FindAsync(ex => ex.Date.Date == hoy && ex.BaseCurrency == monedaBase);
             var tcLocal = listaLocales.FirstOrDefault();
 
             if (tcLocal != null)
@@ -30,11 +24,9 @@ namespace InventoryAPI.Services
                 return tcLocal;
             }
 
-            // 2. INTERNET: Si no está en BD, disparamos la consulta externa
-            string apiToken = "sk_13723.G2u2hnJk9acgY3uFHZMYsJliHho0GXu4";
-            string urlExchange = monedaBase == "EUR"
-                ? "https://api.decolecta.com/v1/tipo-cambio/sbs/accounting?currency=EUR"
-                : "https://api.decolecta.com/v1/tipo-cambio/sunat";
+            string apiToken = configuration["DecolectaApi:ExchangeToken"] ?? throw new ArgumentNullException("DecolectaApi:ExchangeToken", "El token de Exchange no está configurado.");
+
+            string urlExchange = monedaBase == "EUR" ? "https://api.decolecta.com/v1/tipo-cambio/sbs/accounting?currency=EUR" : "https://api.decolecta.com/v1/tipo-cambio/sunat";
 
             try
             {
@@ -69,17 +61,15 @@ namespace InventoryAPI.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[TC_ERROR] {ex.Message}");
+                Debug.WriteLine($"[TC_ERROR] {ex.Message}");
             }
 
-            // 3. SALVAVIDAS HISTÓRICO: Si la API falla, pescamos el último registro de esa moneda
             var historicos = await _workFlow.Repository<ExchangeRate>()
                 .FindAsync(ex => ex.BaseCurrency == monedaBase);
             var ultimoTcHistorico = historicos.OrderByDescending(ex => ex.Date).FirstOrDefault();
 
             if (ultimoTcHistorico != null) return ultimoTcHistorico;
 
-            // 4. SALVAVIDAS FINAL POR DEFECTO
             return new ExchangeRate
             {
                 Id = 0,
@@ -91,7 +81,7 @@ namespace InventoryAPI.Services
             };
         }
 
-        private decimal ObtenerDecimalSeguro(JsonElement element, string propiedad, decimal valorPorDefecto)
+        private static decimal ObtenerDecimalSeguro(JsonElement element, string propiedad, decimal valorPorDefecto)
         {
             if (element.TryGetProperty(propiedad, out var prop))
             {
