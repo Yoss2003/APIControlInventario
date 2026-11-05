@@ -167,7 +167,6 @@ namespace InventoryAPI.Services
                         property.Name != "CompanyId" &&
                         property.Name != "RegistrationDate" &&
                         property.Name != "IsActive" &&
-                        property.Name != "IsSynced" &&
                         property.CanWrite)
                     {
                         var newValue = property.GetValue(updatedArticle);
