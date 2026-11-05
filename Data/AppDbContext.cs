@@ -55,15 +55,6 @@ namespace InventoryAPI.Data
         {
             base.OnModelCreating(modelBuilder);
 
-            modelBuilder.Entity<Movement>().Ignore(e => e.IsSynced);
-            modelBuilder.Entity<Sale>().Ignore(e => e.IsSynced);
-            modelBuilder.Entity<Brand>().Ignore(e => e.IsSynced);
-            modelBuilder.Entity<Category>().Ignore(e => e.IsSynced);
-            modelBuilder.Entity<Article>().Ignore(e => e.IsSynced);
-            modelBuilder.Entity<Customer>().Ignore(e => e.IsSynced);
-            modelBuilder.Entity<Supplier>().Ignore(e => e.IsSynced);
-            modelBuilder.Entity<ArticleDetails>().Ignore(e => e.IsSynced);
-
             modelBuilder.Entity<AccountReceivable>()
             .Property(a => a.InstallmentAmount)
             .HasColumnType("decimal(18,2)");
