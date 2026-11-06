@@ -1,56 +1,36 @@
-﻿using ControlInventario.Shared.Models;
+using ControlInventario.Shared.Models;
 using InventoryAPI.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace InventoryAPI.Controllers
+namespace InventoryAPI.Controllers;
+
+// Consulta pública exclusivamente del catálogo reducido para el selector de login.
+// El CRUD administrativo se ejecuta solo en /api/dev/companies.
+public sealed class CompaniesController(ICompanyService service) : BaseApiController
 {
-    public class CompaniesController(ICompanyService service) : BaseApiController
+    [AllowAnonymous]
+    [HttpGet("Active")]
+    public async Task<IActionResult> GetActiveCompanies() =>
+        Ok(await service.GetActiveCompaniesPublicAsync());
+
+    [HttpGet]
+    public async Task<IActionResult> Get()
     {
-        [HttpGet]
-        public async Task<IActionResult> Get() => Ok(await service.GetAllAsync());
-
-        [HttpGet("Active")]
-        [AllowAnonymous]
-        public async Task<IActionResult> GetActiveCompanies()
-        {
-            var companies = await service.GetActiveCompaniesPublicAsync();
-            return Ok(companies);
-        }
-
-        [HttpGet("{id}")]
-        public async Task<IActionResult> Get(int id)
-        {
-            var company = await service.GetByIdAsync(id);
-            if (company == null) return NotFound();
-            return Ok(company);
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> Post([FromBody] Company company)
-        {
-            await service.CreateAsync(company);
-            return Ok(company);
-        }
-
-        [HttpPut("{id}")]
-        public async Task<IActionResult> Put(int id, [FromBody] Company company)
-        {
-            if (id != company.Id) return BadRequest();
-            await service.UpdateAsync(company);
-            return Ok(company);
-        }
-
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> Delete(int id)
-        {
-            string deletedBy = ObtenerUsuarioSeguro().ToString();
-            var company = await service.GetByIdAsync(id);
-
-            if (company == null) return NotFound();
-
-            await service.DeleteAsync(id, deletedBy);
-            return Ok();
-        }
+        if (User.FindFirst("RoleId")?.Value != "1") return Forbid();
+        return Ok(await service.GetAllAsync());
     }
+
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> Get(int id)
+    {
+        if (User.FindFirst("RoleId")?.Value != "1") return Forbid();
+        var company = await service.GetByIdAsync(id);
+        return company is null ? NotFound() : Ok(company);
+    }
+
+    // Rutas antiguas deshabilitadas para no saltarse validaciones de licencia y dependencias.
+    [HttpPost] public IActionResult OldCreate() => StatusCode(410, new { error = "Utiliza Gestión Dev." });
+    [HttpPut("{id:int}")] public IActionResult OldUpdate(int id) => StatusCode(410, new { error = "Utiliza Gestión Dev." });
+    [HttpDelete("{id:int}")] public IActionResult OldDelete(int id) => StatusCode(410, new { error = "Utiliza Gestión Dev." });
 }

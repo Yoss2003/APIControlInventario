@@ -9,6 +9,7 @@ namespace InventoryAPI.Controllers;
 
 public class InventoriesController(IInventoryService inventoryService, AppDbContext db) : BaseApiController
 {
+    private bool IsDeveloper => User.FindFirst("RoleId")?.Value == "1";
     private readonly IInventoryService _service = inventoryService;
     private readonly AppDbContext _db = db;
 
@@ -20,7 +21,7 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
     }
     private IQueryable<Inventory> Readable(int companyId, int userId) =>
         _db.Inventories.AsNoTracking().Where(i => i.CompanyId == companyId &&
-            (i.UserId == userId || _db.SharedInventories.Any(s =>
+            (IsDeveloper || i.UserId == userId || _db.SharedInventories.Any(s =>
                 s.InventoryId == i.Id && s.UserId == userId && s.CompanyId == companyId)));
 
     [HttpGet]
@@ -57,7 +58,7 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
         if (id != update.Id || !ModelState.IsValid) return BadRequest();
-        var inventory = await _db.Inventories.FirstOrDefaultAsync(i => i.Id == id && i.CompanyId == company && i.UserId == user);
+        var inventory = await _db.Inventories.FirstOrDefaultAsync(i => i.Id == id && i.CompanyId == company && (i.UserId == user || IsDeveloper));
         if (inventory == null) return NotFound();
         if (string.IsNullOrWhiteSpace(update.InventoryName)) return BadRequest(new { error = "El nombre del inventario es obligatorio." });
         inventory.InventoryName = update.InventoryName.Trim(); inventory.Alias = update.Alias?.Trim();
@@ -70,10 +71,14 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
     public async Task<IActionResult> DeleteInventory(int id)
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
-        var inventory = await _db.Inventories.FirstOrDefaultAsync(i => i.Id == id && i.CompanyId == company && i.UserId == user);
+        var inventory = await _db.Inventories.FirstOrDefaultAsync(i => i.Id == id && i.CompanyId == company && (i.UserId == user || IsDeveloper));
         if (inventory == null) return NotFound();
-        if (await _db.Articles.AnyAsync(a => a.InventoryId == id && a.IsActive))
-            return Conflict(new { error = "Antes de desactivar este inventario debes resolver sus artículos activos." });
+        if (await _db.Articles.AnyAsync(a => a.InventoryId == id) ||
+            await _db.Categories.AnyAsync(c => c.InventoryId == id) ||
+            await _db.Brands.AnyAsync(b => b.InventoryId == id) ||
+            await _db.SharedInventories.AnyAsync(sh => sh.InventoryId == id) ||
+            await _db.ArticleAssignments.AnyAsync(a => a.InventoryId == id))
+            return Conflict(new { error = "Inventario referenciado por artículos, categorías, marcas, asignaciones o permisos. No se puede desactivar." });
         inventory.IsActive = false; inventory.ModificationDate = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return NoContent();
@@ -83,7 +88,7 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
     public async Task<IActionResult> ShareInventory([FromBody] ShareRequestDTO request)
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
-        if (!await _db.Inventories.AnyAsync(i => i.Id == request.InventoryId && i.CompanyId == company && i.UserId == user))
+        if (!await _db.Inventories.AnyAsync(i => i.Id == request.InventoryId && i.CompanyId == company && (i.UserId == user || IsDeveloper)))
             return Forbid();
         var result = await _service.ShareInventoryAsync(request);
         return result.Success ? Ok(new { message = result.Message }) : BadRequest(new { error = result.Message });
@@ -93,7 +98,7 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
     public async Task<IActionResult> GetSharedInventories(int inventoryId)
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
-        if (!await _db.Inventories.AnyAsync(i => i.Id == inventoryId && i.CompanyId == company && i.UserId == user))
+        if (!await _db.Inventories.AnyAsync(i => i.Id == inventoryId && i.CompanyId == company && (i.UserId == user || IsDeveloper)))
             return Forbid();
         var records = await _service.GetSharedInventoriesAsync(inventoryId);
         return Ok(records.Select(x => new { x.Id, x.InventoryId, x.UserId,
@@ -105,7 +110,7 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
         var valid = await _db.SharedInventories.AnyAsync(s => s.Id == sharedInventoryId && s.CompanyId == company &&
-            _db.Inventories.Any(i => i.Id == s.InventoryId && i.UserId == user && i.CompanyId == company));
+            _db.Inventories.Any(i => i.Id == s.InventoryId && i.CompanyId == company && (i.UserId == user || IsDeveloper)));
         if (!valid) return Forbid();
         return await _service.RevokeAccessAsync(sharedInventoryId)
             ? NoContent() : Conflict(new { error = "No se pudo revocar el permiso." });

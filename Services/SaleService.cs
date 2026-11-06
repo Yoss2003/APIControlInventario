@@ -17,7 +17,7 @@ public class SaleService(IWorkFlow workFlow, AppDbContext db)
             return (false, "Venta sin usuario, empresa o artículos.");
         if (sale.SaleDetails.Any(d => d.Quantity <= 0 || d.UnitPrice < 0))
             return (false, "Todos los artículos requieren una cantidad positiva y precio no negativo.");
-        if (!await db.Users.AnyAsync(u => u.Id == sale.UserId && u.CompanyId == sale.CompanyId && u.IsActive))
+        if (!await db.Users.AnyAsync(u => u.Id == sale.UserId && (u.CompanyId == sale.CompanyId || u.RoleId == 1) && u.IsActive))
             return (false, "Usuario vendedor no autorizado.");
 
         await using var transaction = await db.Database.BeginTransactionAsync();
@@ -33,6 +33,8 @@ public class SaleService(IWorkFlow workFlow, AppDbContext db)
                     .SingleOrDefaultAsync();
                 if (article == null || !article.IsActive)
                     return (false, $"Artículo #{item.ArticleId} no disponible.");
+                if (article.Tracking.ToString() == "Serialized")
+                    return (false, "La venta de artículos serializados debe identificar sus series. Utiliza POS con selección de unidades.");
                 if (item.Quantity > article.Stock)
                     return (false, $"Stock insuficiente de {article.Name}.");
                 if (article.Tracking.ToString() == "Serialized" && item.Quantity != decimal.Truncate(item.Quantity))

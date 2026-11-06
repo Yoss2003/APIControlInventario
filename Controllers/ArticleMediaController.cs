@@ -10,6 +10,7 @@ namespace InventoryAPI.Controllers;
 [Route("api/Articles")]
 public sealed class ArticleMediaController(AppDbContext db, IWebHostEnvironment environment) : ControllerBase
 {
+    private bool IsDeveloper => User.FindFirst("RoleId")?.Value == "1";
     private readonly AppDbContext _db = db;
     private readonly IWebHostEnvironment _environment = environment;
     private bool TryCompany(out int companyId) =>
@@ -17,7 +18,7 @@ public sealed class ArticleMediaController(AppDbContext db, IWebHostEnvironment 
 
     private IQueryable<int> AccessibleInventoryIds(int cid, int uid, bool edit = false) =>
         _db.Inventories.Where(i => i.CompanyId == cid &&
-            (i.UserId == uid || _db.SharedInventories.Any(sh => sh.InventoryId == i.Id &&
+            (IsDeveloper || i.UserId == uid || _db.SharedInventories.Any(sh => sh.InventoryId == i.Id &&
                 sh.CompanyId == cid && sh.UserId == uid &&
                 (!edit || sh.AccessLevel == ControlInventario.Shared.Models.SharedInventory.AccessMode.Editor)))).Select(i => i.Id);
 

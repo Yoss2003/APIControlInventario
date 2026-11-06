@@ -30,6 +30,8 @@ public class MovementService(IWorkFlow workFlow, AppDbContext db)
         if (article.Tracking.ToString() == "Serialized" && movement.Amount != decimal.Truncate(movement.Amount.Value))
             throw new ArgumentException("Un artículo serializado requiere cantidades enteras.");
 
+        if (article.Tracking.ToString() == "Serialized")
+            throw new InvalidOperationException("Para serializados, registra primero cada unidad y usa venta/asignación con su ID; no se permite ajuste por cantidad.");
         var delta = movement.ActionId == 1 ? movement.Amount.Value : -movement.Amount.Value;
         if (article.Stock + delta < 0)
             throw new InvalidOperationException("Stock insuficiente para completar la operación.");

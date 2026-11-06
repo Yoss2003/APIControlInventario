@@ -42,6 +42,9 @@ namespace InventoryAPI.Data
         public DbSet<EmployeePermission> EmployeePermissions { get; set; }
         public DbSet<SharedInventory> SharedInventories { get; set; }
         public DbSet<CategoryMeasurementUnit> CategoryMeasurementUnits { get; set; }
+        public DbSet<ArticleUnitOperation> ArticleUnitOperations { get; set; }
+        public DbSet<CompanyLicense> CompanyLicenses { get; set; }
+        public DbSet<PasswordRecoveryRequest> PasswordRecoveryRequests { get; set; }
         public DbSet<ArticleAssignment> ArticleAssignments { get; set; }
         public DbSet<ArticleAssignmentEvent> ArticleAssignmentEvents { get; set; }
         public DbSet<MovementCancellation> MovementCancellations { get; set; }
@@ -51,6 +54,22 @@ namespace InventoryAPI.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<ArticleUnitOperation>(e => {
+                e.HasIndex(x => x.ArticleDetailId).IsUnique().HasFilter("\"IsReversed\" = false");
+                e.HasIndex(x => new { x.CompanyId, x.ArticleId, x.SaleId });
+                e.HasIndex(x => new { x.CompanyId, x.ArticleId, x.AssignmentId });
+                e.HasOne<ArticleDetails>().WithMany().HasForeignKey(x => x.ArticleDetailId).OnDelete(DeleteBehavior.Restrict);
+            });
+            modelBuilder.Entity<CompanyLicense>(e => {
+                e.HasIndex(x => x.CompanyId).IsUnique();
+                e.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            });
+            modelBuilder.Entity<PasswordRecoveryRequest>(e => {
+                e.HasIndex(x => x.TokenHash).IsUnique();
+                e.HasIndex(x => new { x.UserId, x.RequestedAt });
+                e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne<Company>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+            });
             modelBuilder.Entity<AccountReceivable>()
                 .Property(a => a.InstallmentAmount).HasColumnType("decimal(18,2)");
 

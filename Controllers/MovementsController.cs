@@ -8,11 +8,12 @@ namespace InventoryAPI.Controllers
 {
     public class MovementsController(IMovementService movementService, InventoryAPI.Data.AppDbContext db) : BaseApiController
     {
+        private bool IsDeveloper => User.FindFirst("RoleId")?.Value == "1";
         private readonly IMovementService _movementService = movementService;
 
         private IQueryable<int> AccessibleInventories(int companyId, int userId, bool edit = false) =>
             db.Inventories.Where(i => i.CompanyId == companyId &&
-                (i.UserId == userId || db.SharedInventories.Any(sh =>
+                (IsDeveloper || i.UserId == userId || db.SharedInventories.Any(sh =>
                   sh.InventoryId == i.Id && sh.CompanyId == companyId && sh.UserId == userId &&
                   (!edit || sh.AccessLevel == SharedInventory.AccessMode.Editor)))).Select(i => i.Id);
 
@@ -46,6 +47,8 @@ namespace InventoryAPI.Controllers
                 return BadRequest(new { error = "Las entregas se crean mediante /api/Assignments." });
             try
             {
+                movement.EmployeeId = await db.Employees.Where(e => e.CompanyId == movement.CompanyId &&
+                    e.UserId == ObtenerUsuarioSeguro()).Select(e => (int?)e.Id).FirstOrDefaultAsync();
                 var success = await _movementService.CreateAsync(movement);
                 return success ? CreatedAtAction(nameof(GetMovement), new { id = movement.Id }, movement)
                     : BadRequest(new { error = "No se pudo registrar el movimiento." });

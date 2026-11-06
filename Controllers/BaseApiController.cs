@@ -17,7 +17,7 @@ namespace InventoryAPI.Controllers
                 return companyId;
             }
 
-            return 1;
+            return 0;
         }
 
         protected int ObtenerUsuarioSeguro()

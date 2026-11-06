@@ -4,7 +4,6 @@ using ControlInventario.Shared.Models.DTO;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
-using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using OtpNet;
 using System.Diagnostics;
@@ -13,6 +12,8 @@ using System.Net;
 using System.Net.Mail;
 using System.Security.Claims;
 using System.Text;
+using InventoryAPI.Models;
+using InventoryAPI.Security;
 
 namespace InventoryAPI.Services
 {
@@ -228,13 +229,25 @@ namespace InventoryAPI.Services
                 u => u.Company!
             );
 
-            string claveHasheada = SecurityHelper.GenerarHashSHA256(request.Password);
-
-            var targetUser = usersMatch.FirstOrDefault(u => u.Username == request.Username && string.Equals(u.Password, claveHasheada, StringComparison.OrdinalIgnoreCase));
+            var targetUser = usersMatch.FirstOrDefault(u => u.Username == request.Username && (u.CompanyId == request.CompanyId || u.RoleId == 1) && PasswordHashService.Verify(request.Password, u.Password ?? ""));
 
             if (targetUser == null) return (false, null, "Usuario o contraseña incorrectos", false, false, false);
 
             int DEVELOPER_ROLE_ID = 1;
+
+            var activeCompany = await _workFlow.Repository<Company>()
+            .FindAsync(c => c.Id == request.CompanyId && c.IsActive);
+                if (!activeCompany.Any())
+                    return (false, null, "La empresa seleccionada no está activa.", false, false, false);
+                if (targetUser.RoleId != DEVELOPER_ROLE_ID)
+                {
+                    var licenses = await _workFlow.Repository<CompanyLicense>()
+                        .FindAsync(l => l.CompanyId == request.CompanyId);
+                    var license = licenses.FirstOrDefault();
+                    if (license is not null && (!license.IsEnabled || license.ExpiresAt <= DateTime.UtcNow))
+                        return (false, null, "La licencia de la empresa está suspendida o vencida.", false, false, true);
+                }
+
             if (targetUser.RoleId != DEVELOPER_ROLE_ID && targetUser.CompanyId != request.CompanyId)
             {
                 return (false, null, "Estas credenciales no están autorizadas para esta empresa o sucursal.", false, false, false);
@@ -258,7 +271,15 @@ namespace InventoryAPI.Services
             if (targetUser.MustChangePassword)
                 return (true, targetUser, "Debe cambiar contraseña", false, true, false);
 
-            targetUser.Token = GenerarTokenJWT(targetUser);
+
+            if (request.CompanyId <= 0)
+                return (false, null, "Selecciona una empresa válida.", false, false, false);
+
+            var selectedCompany = await _workFlow.Repository<Company>().GetByIdAsync(request.CompanyId);
+            if (selectedCompany == null || !selectedCompany.IsActive)
+                return (false, null, "La empresa seleccionada no está disponible.", false, false, false);
+
+            targetUser.Token = GenerarTokenJWT(targetUser, request.CompanyId);
             return (true, targetUser, "Login exitoso", false, false, false);
         }
 
@@ -533,7 +554,7 @@ namespace InventoryAPI.Services
             }
         }
 
-        private string GenerarTokenJWT(User user)
+        private string GenerarTokenJWT(User user, int selectedCompanyId)
         {
             var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration["Jwt:Key"]!));
             var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
@@ -542,8 +563,9 @@ namespace InventoryAPI.Services
             {
                 new Claim(JwtRegisteredClaimNames.Sub, user.Username ?? ""),
                 new Claim("UserId", user.Id.ToString()),
-                new Claim("CompanyId", (user.CompanyId ?? 1).ToString()),
-                new Claim("RoleId", user.RoleId.ToString())
+                new Claim("CompanyId", selectedCompanyId.ToString()),
+                new Claim("RoleId", user.RoleId.ToString()),
+                new Claim(JwtRegisteredClaimNames.Iat,DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
             };
 
             var token = new JwtSecurityToken(

@@ -9,17 +9,18 @@ namespace InventoryAPI.Controllers;
 
 public class SalesController(ISaleService saleService, AppDbContext db) : BaseApiController
 {
+    private bool IsDeveloper => User.FindFirst("RoleId")?.Value == "1";
     private readonly ISaleService _saleService = saleService;
     private readonly AppDbContext _db = db;
     private IQueryable<int> WritableInventories(int company, int userId) =>
         _db.Inventories.Where(i => i.CompanyId == company &&
-            (i.UserId == userId || _db.SharedInventories.Any(s =>
+            (IsDeveloper || i.UserId == userId || _db.SharedInventories.Any(s =>
                 s.CompanyId == company && s.InventoryId == i.Id && s.UserId == userId &&
                 s.AccessLevel == SharedInventory.AccessMode.Editor))).Select(i => i.Id);
 
     private IQueryable<int> ReadableInventories(int company, int userId) =>
         _db.Inventories.Where(i => i.CompanyId == company &&
-            (i.UserId == userId || _db.SharedInventories.Any(s =>
+            (IsDeveloper || i.UserId == userId || _db.SharedInventories.Any(s =>
                 s.CompanyId == company && s.InventoryId == i.Id && s.UserId == userId))).Select(i => i.Id);
 
 
@@ -62,7 +63,7 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
     }
 
     public sealed record QuickSaleRequest(int ArticleId, decimal Quantity, decimal UnitPrice,
-        string? CustomerName, string PaymentMethod, string? Notes, Guid OperationKey);
+        string? CustomerName, string PaymentMethod, string? Notes, Guid OperationKey, List<int>? DetailIds);
     public sealed record CancelSaleRequest(string Reason);
 
     [HttpPost("quick")]
@@ -87,6 +88,16 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
         if (article.Stock < request.Quantity) return Conflict(new { error = "Stock insuficiente." });
         if (article.Tracking.ToString() == "Serialized" && request.Quantity != decimal.Truncate(request.Quantity))
             return BadRequest(new { error = "Para artículos serializados se requieren unidades enteras." });
+        var detailIds = request.DetailIds ?? new List<int>();
+        if (article.Tracking.ToString() == "Serialized")
+        {
+            if (detailIds.Count != (int)request.Quantity || detailIds.Distinct().Count() != detailIds.Count)
+                return BadRequest(new { error = "Selecciona una serie distinta por cada unidad vendida." });
+            var usable = await _db.Set<ArticleDetails>().CountAsync(d => d.ArticleId == article.Id && d.IsActive &&
+                detailIds.Contains(d.Id) && !_db.ArticleUnitOperations.Any(op => op.ArticleDetailId == d.Id && !op.IsReversed));
+            if (usable != detailIds.Count) return Conflict(new { error = "Alguna de las series no está disponible." });
+        }
+        else if (detailIds.Count > 0) return BadRequest(new { error = "La selección de series solo aplica a artículos serializados." });
         var modeId = await _db.SalesModes.Select(x => x.Id).OrderBy(x => x).FirstOrDefaultAsync();
         if (modeId == 0)
         {
@@ -121,6 +132,11 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             Recipient = sale.CustomerName, PaymentMethod = payment.ToString(), SalePrice = request.UnitPrice,
             Observation = request.Notes, DocumentNumber = $"VENTA-{sale.Id}"
         });
+        foreach (var detailId in detailIds)
+            _db.ArticleUnitOperations.Add(new ArticleUnitOperation {
+                CompanyId = companyId, ArticleId = article.Id, ArticleDetailId = detailId,
+                SaleId = sale.Id, CreatedAt = DateTime.UtcNow
+            });
         _db.SaleOperations.Add(new SaleOperation { OperationKey = request.OperationKey, SaleId = sale.Id, CompanyId = companyId });
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
@@ -161,6 +177,8 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
                 Observation = $"Anulación de venta #{id}: {request.Reason.Trim()}"
             });
         }
+        var soldUnits = await _db.ArticleUnitOperations.Where(u => u.SaleId == id && !u.IsReversed).ToListAsync();
+        foreach (var soldUnit in soldUnits) { soldUnit.IsReversed = true; soldUnit.ReversedAt = DateTime.UtcNow; }
         _db.SaleCancellations.Add(new SaleCancellation
         {
             SaleId = id, CompanyId = companyId, CancelledByUserId = userId,

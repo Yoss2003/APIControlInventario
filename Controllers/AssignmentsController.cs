@@ -13,13 +13,14 @@ namespace InventoryAPI.Controllers;
 [Route("api/Assignments")]
 public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment environment) : ControllerBase
 {
+    private bool IsDeveloper => User.FindFirst("RoleId")?.Value == "1";
     private readonly AppDbContext _db = db;
     private readonly IWebHostEnvironment _env = environment;
 
     public sealed record AssignRequest(
         int ArticleId, decimal Quantity, string RecipientName, int? RecipientUserId,
-        string? Observation, Guid OperationKey);
-    public sealed record ReturnRequest(decimal Quantity, string? Observation, Guid OperationKey);
+        string? Observation, Guid OperationKey, List<int>? DetailIds);
+    public sealed record ReturnRequest(decimal Quantity, string? Observation, Guid OperationKey, List<int>? DetailIds);
 
     private bool TryScope(out int companyId, out int userId)
     {
@@ -30,7 +31,7 @@ public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment e
 
     private IQueryable<ArticleAssignment> Visible(int companyId, int userId) =>
         _db.ArticleAssignments.AsNoTracking().Where(a => a.CompanyId == companyId &&
-            (a.AssignedByUserId == userId || a.RecipientUserId == userId ||
+            (IsDeveloper || a.AssignedByUserId == userId || a.RecipientUserId == userId ||
              _db.Inventories.Any(i => i.Id == a.InventoryId && i.UserId == userId)));
 
     public sealed record AssignmentSummary(
@@ -55,7 +56,7 @@ public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment e
     public async Task<IActionResult> Outgoing()
     {
         if (!TryScope(out var companyId, out var userId)) return Unauthorized();
-        var query = Visible(companyId, userId).Where(a => a.AssignedByUserId == userId ||
+        var query = Visible(companyId, userId).Where(a => IsDeveloper || a.AssignedByUserId == userId ||
             _db.Inventories.Any(i => i.Id == a.InventoryId && i.UserId == userId));
         return Ok(await Display(query.OrderByDescending(a => a.AssignedAt)).ToListAsync());
     }
@@ -115,12 +116,22 @@ public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment e
             $"SELECT * FROM \"Articles\" WHERE \"Id\" = {request.ArticleId} AND \"CompanyId\" = {companyId} FOR UPDATE")
             .SingleOrDefaultAsync();
         if (article == null || !article.IsActive) return NotFound(new { error = "Artículo no encontrado o inactivo." });
-        if (!await _db.Inventories.AnyAsync(i => i.Id == article.InventoryId && i.CompanyId == companyId && i.UserId == userId))
+        if (!await _db.Inventories.AnyAsync(i => i.Id == article.InventoryId && i.CompanyId == companyId && (i.UserId == userId || IsDeveloper)))
             return Forbid();
         if (article.Stock < request.Quantity) return Conflict(new { error = "Stock insuficiente." });
         if (article.Tracking.ToString() == "Serialized" && request.Quantity != decimal.Truncate(request.Quantity))
             return BadRequest(new { error = "La cantidad serializada debe ser entera." });
 
+        var detailIds = request.DetailIds ?? new List<int>();
+        if (article.Tracking.ToString() == "Serialized")
+        {
+            if (detailIds.Count != (int)request.Quantity || detailIds.Distinct().Count() != detailIds.Count)
+                return BadRequest(new { error = "Selecciona exactamente una serie distinta por unidad asignada." });
+            var available = await _db.Set<ArticleDetails>().CountAsync(d => d.ArticleId == article.Id && d.IsActive &&
+                detailIds.Contains(d.Id) && !_db.ArticleUnitOperations.Any(op => op.ArticleDetailId == d.Id && !op.IsReversed));
+            if (available != detailIds.Count) return Conflict(new { error = "Una de las series ya está vendida o asignada." });
+        }
+        else if (detailIds.Count > 0) return BadRequest(new { error = "Este artículo no usa series." });
         article.Stock -= request.Quantity;
         article.ModificationDate = DateTime.UtcNow;
         var assignment = new ArticleAssignment
@@ -136,9 +147,11 @@ public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment e
             Observation = request.Observation?.Trim(),
             AssignedAt = DateTime.UtcNow
         };
+        var employeeId = await _db.Employees.Where(e => e.CompanyId == companyId && e.UserId == userId)
+            .Select(e => (int?)e.Id).FirstOrDefaultAsync();
         var movement = new Movement
         {
-            ArticleId = article.Id, CompanyId = companyId, ActionId = 3,
+            ArticleId = article.Id, CompanyId = companyId, EmployeeId = employeeId, ActionId = 3,
             MovementDate = DateTime.UtcNow, Amount = request.Quantity,
             Recipient = assignment.RecipientName,
             Observation = $"Entrega de custodia. {request.Observation}".Trim(),
@@ -147,6 +160,11 @@ public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment e
         _db.ArticleAssignments.Add(assignment);
         _db.Movements.Add(movement);
         await _db.SaveChangesAsync();
+        foreach (var detailId in detailIds)
+            _db.ArticleUnitOperations.Add(new ArticleUnitOperation {
+                CompanyId = companyId, ArticleId = article.Id, ArticleDetailId = detailId,
+                AssignmentId = assignment.Id, CreatedAt = DateTime.UtcNow
+            });
         _db.ArticleAssignmentEvents.Add(new ArticleAssignmentEvent
         {
             AssignmentId = assignment.Id, CompanyId = companyId, ActorUserId = userId,
@@ -221,7 +239,7 @@ public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment e
             $"SELECT * FROM \"ArticleAssignments\" WHERE \"Id\" = {id} AND \"CompanyId\" = {companyId} FOR UPDATE")
             .SingleOrDefaultAsync();
         if (assignment == null) return NotFound();
-        var owns = assignment.AssignedByUserId == userId ||
+        var owns = IsDeveloper || assignment.AssignedByUserId == userId ||
             await _db.Inventories.AnyAsync(i => i.Id == assignment.InventoryId && i.UserId == userId && i.CompanyId == companyId);
         if (!owns && assignment.RecipientUserId != userId) return Forbid();
         if (assignment.Quantity - assignment.ReturnedQuantity < request.Quantity)
@@ -231,12 +249,25 @@ public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment e
             $"SELECT * FROM \"Articles\" WHERE \"Id\" = {assignment.ArticleId} AND \"CompanyId\" = {companyId} FOR UPDATE")
             .SingleOrDefaultAsync();
         if (article == null) return NotFound(new { error = "Artículo original no encontrado." });
+        var returningIds = request.DetailIds ?? new List<int>();
+        if (article.Tracking.ToString() == "Serialized")
+        {
+            if (returningIds.Count != (int)request.Quantity || returningIds.Distinct().Count() != returningIds.Count)
+                return BadRequest(new { error = "Selecciona una serie por cada unidad devuelta." });
+            var units = await _db.ArticleUnitOperations.Where(u => u.AssignmentId == id && !u.IsReversed &&
+                returningIds.Contains(u.ArticleDetailId)).ToListAsync();
+            if (units.Count != returningIds.Count) return Conflict(new { error = "Una serie no pertenece a esta custodia o ya fue devuelta." });
+            foreach (var unit in units) { unit.IsReversed = true; unit.ReversedAt = DateTime.UtcNow; }
+        }
+        else if (returningIds.Count > 0) return BadRequest(new { error = "Artículo sin series." });
         article.Stock += request.Quantity;
         article.ModificationDate = DateTime.UtcNow;
         assignment.ReturnedQuantity += request.Quantity;
+        var employeeId = await _db.Employees.Where(e => e.CompanyId == companyId && e.UserId == userId)
+            .Select(e => (int?)e.Id).FirstOrDefaultAsync();
         var movement = new Movement
         {
-            ArticleId = article.Id, CompanyId = companyId, ActionId = 1,
+            ArticleId = article.Id, CompanyId = companyId, EmployeeId = employeeId, ActionId = 1,
             MovementDate = DateTime.UtcNow, Amount = request.Quantity,
             Recipient = assignment.RecipientName, Observation = $"Devolución de custodia #{id}. {request.Observation}".Trim()
         };

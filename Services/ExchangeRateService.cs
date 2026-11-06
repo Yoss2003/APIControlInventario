@@ -1,97 +1,62 @@
-﻿using ControlInventario.Shared.Models;
+using ControlInventario.Shared.Models;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
-using System.Diagnostics;
+using System.Net.Http.Headers;
 using System.Text.Json;
 
-namespace InventoryAPI.Services
+namespace InventoryAPI.Services;
+
+public sealed class ExchangeRateService(IWorkFlow workFlow, HttpClient httpClient, IConfiguration configuration)
+    : WorkContainer<ExchangeRate>(workFlow), IExchangeRateService
 {
-    public class ExchangeRateService(IWorkFlow workFlow, HttpClient httpClient, IConfiguration configuration) : WorkContainer<ExchangeRate>(workFlow), IExchangeRateService
+    public async Task<ExchangeRate> GetTodayExchangeRateAsync(string? currency)
     {
-        private readonly HttpClient _httpClient = httpClient;
+        string code = string.IsNullOrWhiteSpace(currency) ? "USD" : currency.Trim().ToUpperInvariant();
+        if (code is not ("USD" or "EUR")) throw new ArgumentException("Solo USD o EUR.");
+        var today = DateTime.UtcNow.Date;
+        var cache = (await _workFlow.Repository<ExchangeRate>().FindAsync(x => x.BaseCurrency == code && x.Date.Date == today))
+            .FirstOrDefault();
+        if (cache != null) return cache;
 
-        public async Task<ExchangeRate> GetTodayExchangeRateAsync(string? currency)
+        var token = configuration["DecolectaApi:ExchangeToken"];
+        if (!string.IsNullOrWhiteSpace(token))
         {
-            string monedaBase = string.IsNullOrWhiteSpace(currency) ? "USD" : currency.Trim().ToUpper();
-            DateTime hoy = DateTime.UtcNow.Date;
-
-            var listaLocales = await _workFlow.Repository<ExchangeRate>().FindAsync(ex => ex.Date.Date == hoy && ex.BaseCurrency == monedaBase);
-            var tcLocal = listaLocales.FirstOrDefault();
-
-            if (tcLocal != null)
-            {
-                return tcLocal;
-            }
-
-            string apiToken = configuration["DecolectaApi:ExchangeToken"] ?? throw new ArgumentNullException("DecolectaApi:ExchangeToken", "El token de Exchange no está configurado.");
-
-            string urlExchange = monedaBase == "EUR" ? "https://api.decolecta.com/v1/tipo-cambio/sbs/accounting?currency=EUR" : "https://api.decolecta.com/v1/tipo-cambio/sunat";
-
             try
             {
-                var request = new HttpRequestMessage(HttpMethod.Get, urlExchange);
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
-
-                var response = await _httpClient.SendAsync(request);
-
+                var url = code == "EUR" ? "https://api.decolecta.com/v1/tipo-cambio/sbs/accounting?currency=EUR"
+                    : "https://api.decolecta.com/v1/tipo-cambio/sunat";
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                using var response = await httpClient.SendAsync(request);
                 if (response.IsSuccessStatusCode)
                 {
-                    string jsonString = await response.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(jsonString);
-                    var root = doc.RootElement;
-
-                    decimal compra = ObtenerDecimalSeguro(root, "buy_price", monedaBase == "EUR" ? 3.65m : 3.75m);
-                    decimal venta = ObtenerDecimalSeguro(root, "sell_price", monedaBase == "EUR" ? 3.70m : 3.78m);
-
-                    var nuevoTc = new ExchangeRate
+                    using var data = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                    var root = data.RootElement;
+                    if (TryRate(root, "buy_price", out decimal buy) && TryRate(root, "sell_price", out decimal sell) && buy > 0 && sell > 0)
                     {
-                        BaseCurrency = monedaBase,
-                        QuoteCurrency = "PEN",
-                        BuyPrice = compra,
-                        SellPrice = venta,
-                        Date = hoy
-                    };
-
-                    await _workFlow.Repository<ExchangeRate>().AddAsync(nuevoTc);
-                    await _workFlow.CompleteAsync();
-
-                    return nuevoTc;
+                        var record = new ExchangeRate { BaseCurrency = code, QuoteCurrency = "PEN",
+                            BuyPrice = buy, SellPrice = sell, Date = today };
+                        await _workFlow.Repository<ExchangeRate>().AddAsync(record);
+                        await _workFlow.CompleteAsync();
+                        return record;
+                    }
                 }
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[TC_ERROR] {ex.Message}");
-            }
-
-            var historicos = await _workFlow.Repository<ExchangeRate>()
-                .FindAsync(ex => ex.BaseCurrency == monedaBase);
-            var ultimoTcHistorico = historicos.OrderByDescending(ex => ex.Date).FirstOrDefault();
-
-            if (ultimoTcHistorico != null) return ultimoTcHistorico;
-
-            return new ExchangeRate
-            {
-                Id = 0,
-                BaseCurrency = monedaBase,
-                QuoteCurrency = "PEN",
-                BuyPrice = monedaBase == "EUR" ? 3.6500m : 3.7400m,
-                SellPrice = monedaBase == "EUR" ? 3.7000m : 3.7700m,
-                Date = hoy
-            };
+            catch (Exception) { /* Usar únicamente historial real, nunca tasas inventadas. */ }
         }
-
-        private static decimal ObtenerDecimalSeguro(JsonElement element, string propiedad, decimal valorPorDefecto)
-        {
-            if (element.TryGetProperty(propiedad, out var prop))
-            {
-                if (prop.ValueKind == JsonValueKind.Number) return prop.GetDecimal();
-                if (prop.ValueKind == JsonValueKind.String && decimal.TryParse(prop.GetString(), out var parsedVal))
-                {
-                    return parsedVal;
-                }
-            }
-            return valorPorDefecto;
-        }
+        var history = await _workFlow.Repository<ExchangeRate>().FindAsync(x => x.BaseCurrency == code);
+        var previous = history.OrderByDescending(x => x.Date).FirstOrDefault();
+        if (previous != null) return previous; // Fecha explícita: Angular muestra si es histórico.
+        throw new InvalidOperationException("No hay una cotización verificada disponible para " + code);
+    }
+    private static bool TryRate(JsonElement root, string key, out decimal value)
+    {
+        value = 0;
+        if (!root.TryGetProperty(key, out var prop)) return false;
+        if (prop.ValueKind == JsonValueKind.Number) return prop.TryGetDecimal(out value);
+        return prop.ValueKind == JsonValueKind.String && decimal.TryParse(prop.GetString(),
+            System.Globalization.NumberStyles.Number,
+            System.Globalization.CultureInfo.InvariantCulture, out value);
     }
 }

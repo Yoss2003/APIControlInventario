@@ -56,6 +56,11 @@ namespace InventoryAPI.Controllers
         public async Task<ActionResult<User>> PostUser([FromBody] User user)
         {
             user.CompanyId = ObtenerEmpresaSegura();
+            var lic = await db.CompanyLicenses.AsNoTracking().FirstOrDefaultAsync(x => x.CompanyId == user.CompanyId);
+            var count = await db.Users.CountAsync(x => x.CompanyId == user.CompanyId && x.IsActive);
+            if (lic != null && (!lic.IsEnabled || lic.ExpiresAt <= DateTime.UtcNow || count >= lic.MaxUsers))
+                return Conflict(new { error = "Licencia inactiva, vencida o límite de usuarios alcanzado." });
+
             var result = await _userService.CreateUserAsync(user, _env.ContentRootPath);
 
             if (!result.Success) return BadRequest(result.Data);
@@ -88,9 +93,9 @@ namespace InventoryAPI.Controllers
                 if (result.AccountPending) return Unauthorized(new { accountPending = true, mensaje = result.Message });
                 return Unauthorized(new { mensaje = result.Message });
             }
-            if (result.RequirePasswordChange) return Ok(new { requirePasswordChange = true, user = result.User });
-
-            return Ok(result.User);
+            if (result.RequirePasswordChange) return Ok(new { requirePasswordChange = true });
+            var u = result.User!;
+            return Ok(new { u.Id, u.Username, u.Email, u.RoleId, companyId = request.CompanyId, u.Token });
         }
 
         [HttpPost("ChangeInitialPassword")]
@@ -100,7 +105,7 @@ namespace InventoryAPI.Controllers
             var result = await _userService.ChangeInitialPasswordAsync(request.UserId, request.NewPassword);
             if (!result.Success) return NotFound(new { mensaje = result.Message });
 
-            return Ok(result.User);
+            return StatusCode(410, new { error = "Este mecanismo se reemplazó por solicitudes aprobadas en Gestión Dev." });
         }
 
         [HttpPut("{id}/UpdatePhoto")]

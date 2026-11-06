@@ -96,7 +96,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+        }; 
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = InventoryAPI.Security.SessionSecurityValidator.ValidateAsync
         };
+
     });
 
 try

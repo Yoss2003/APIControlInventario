@@ -8,6 +8,7 @@ namespace InventoryAPI.Controllers;
 
 public class ArticlesController(IArticleService articleService, AppDbContext db) : BaseApiController
 {
+    private bool IsDeveloper => User.FindFirst("RoleId")?.Value == "1";
     private readonly IArticleService _service = articleService;
     private readonly AppDbContext _db = db;
     private bool TryCompany(out int companyId) =>
@@ -16,7 +17,7 @@ public class ArticlesController(IArticleService articleService, AppDbContext db)
     // No confundir custodia con permiso de lectura de un almacén.
     private IQueryable<int> AccessibleInventories(int companyId, int userId, bool edit = false) =>
         _db.Inventories.Where(i => i.CompanyId == companyId &&
-            (i.UserId == userId || _db.SharedInventories.Any(share =>
+            (IsDeveloper || i.UserId == userId || _db.SharedInventories.Any(share =>
                 share.InventoryId == i.Id && share.UserId == userId && share.CompanyId == companyId &&
                 (!edit || share.AccessLevel == SharedInventory.AccessMode.Editor))))
             .Select(i => i.Id);
@@ -66,6 +67,14 @@ public class ArticlesController(IArticleService articleService, AppDbContext db)
         if (error != null) return BadRequest(new { error });
         if (await _db.Articles.AnyAsync(a => a.CompanyId == companyId && a.InventoryId == article.InventoryId && a.Code == article.Code && a.IsActive))
             return Conflict(new { error = "El código ya existe en este inventario." });
+        if (article.Tracking.ToString() == "Serialized")
+        {
+            var units = article.Details.ToList();
+            if (units.Any(d => string.IsNullOrWhiteSpace(d.SerialNumber)) ||
+                units.Select(d => d.SerialNumber.Trim().ToUpperInvariant()).Distinct().Count() != units.Count ||
+                article.Stock != units.Count)
+                return BadRequest(new { error = "Un artículo serializado necesita una serie distinta por cada unidad de stock inicial." });
+        }
         // EF administra la FK ArticleId de las series incluidas al crear.
         foreach (var d in article.Details) { d.Id = 0; d.IsActive = true; d.RegistrationDate = DateTime.UtcNow; }
         try
@@ -104,6 +113,8 @@ public class ArticlesController(IArticleService articleService, AppDbContext db)
             update.Stock != current.Stock)
             return Conflict(new { error = "Hay custodias vigentes: el stock se modifica con operaciones, no editando el artículo." });
 
+        if (current.Tracking.ToString() == "Serialized" && update.Stock != current.Stock)
+            return Conflict(new { error = "Para serializados, registra unidades en Gestión de series; no edites stock por cantidad." });
         var stockDelta = update.Stock - current.Stock;
         current.Name = update.Name.Trim(); current.Code = update.Code.Trim();
         current.Barcode = update.Barcode; current.Model = update.Model;
@@ -149,7 +160,9 @@ public class ArticlesController(IArticleService articleService, AppDbContext db)
         if (article is null) return NotFound();
         if (!await AccessibleInventories(companyId, ObtenerUsuarioSeguro(), true).ContainsAsync(article.InventoryId)) return Forbid();
         if (!article.IsActive) return NoContent();
-        if (article.Stock != 0 || await _db.ArticleAssignments.AnyAsync(a => a.ArticleId == id && a.CompanyId == companyId && a.Quantity > a.ReturnedQuantity))
+        if (article.Stock != 0 || await _db.Movements.AnyAsync(m => m.ArticleId == id) ||
+            await _db.SaleDetails.AnyAsync(d => d.ArticleId == id) ||
+            await _db.ArticleAssignments.AnyAsync(a => a.ArticleId == id && a.CompanyId == companyId && a.Quantity > a.ReturnedQuantity))
             return Conflict(new { error = "Primero agota el stock y cierra las asignaciones pendientes." });
         article.IsActive = false;
         article.ModificationDate = DateTime.UtcNow;
@@ -182,6 +195,8 @@ public class ArticlesController(IArticleService articleService, AppDbContext db)
         var article = await _db.Articles.AsNoTracking().FirstOrDefaultAsync(a => a.Id == detail.ArticleId && a.CompanyId == companyId);
         if (article is null) return NotFound();
         if (!await AccessibleInventories(companyId, ObtenerUsuarioSeguro(), true).ContainsAsync(article.InventoryId)) return Forbid();
+        if (article.Tracking.ToString() == "Serialized")
+            return Conflict(new { error = "Registra unidades con POST /api/serial-units/{articleId}, que también crea el movimiento." });
         var result = await _service.AddDetailAsync(detail);
         return result.Success ? Ok(new { newId = detail.Id }) : BadRequest(new { error = result.ErrorMessage });
     }
@@ -200,6 +215,8 @@ public class ArticlesController(IArticleService articleService, AppDbContext db)
         if (!TryCompany(out var companyId)) return Unauthorized();
         var detail = await _db.Set<ArticleDetails>().FirstOrDefaultAsync(x => x.Id == id);
         if (detail == null || !await _db.Articles.AnyAsync(a => a.Id == detail.ArticleId && a.CompanyId == companyId && AccessibleInventories(companyId, ObtenerUsuarioSeguro(), true).Contains(a.InventoryId))) return NotFound();
+        if (await _db.ArticleUnitOperations.AnyAsync(o => o.ArticleDetailId == id))
+            return Conflict(new { error = "La serie tiene historial de venta o asignación; no puede eliminarse." });
         return await _service.DeleteDetailAsync(id) ? NoContent() : BadRequest();
     }
 }
