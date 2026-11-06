@@ -36,7 +36,7 @@ namespace InventoryAPI.Repositories
             var entity = await _workFlow.Repository<T>().GetByIdAsync(id);
             if (entity == null) return false;
 
-            if (entity is ControlInventario.Shared.Models.Interfaces.ISoftDelete softDeleteEntity)
+            if (entity is InventoryAPI.Models.Interfaces.ISoftDelete softDeleteEntity)
             {
                 softDeleteEntity.IsActive = false;
                 softDeleteEntity.DeletionDate = DateTime.Now;

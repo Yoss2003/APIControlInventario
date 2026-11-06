@@ -1,16 +1,17 @@
-﻿using ControlInventario.Shared.Models;
-using ControlInventario.Shared.Models.DTO;
+using InventoryAPI.Models;
+using InventoryAPI.Models.DTO;
 using InventoryAPI.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InventoryAPI.Controllers
 {
-    public class UsersController(IUserService userService, IWebHostEnvironment env, IFcmNotificationService fcmNotificationService) : BaseApiController
+    public class UsersController(IUserService userService, IWebHostEnvironment env, IFcmNotificationService fcmNotificationService, ICompanyLicenseService licenseService) : BaseApiController
     {
         private readonly IUserService _userService = userService;
         private readonly IWebHostEnvironment _env = env;
         private readonly IFcmNotificationService _fcmNotificationService = fcmNotificationService;
+        private readonly ICompanyLicenseService _licenseService = licenseService;
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<UserDTO>>> GetUsers()
@@ -56,10 +57,16 @@ namespace InventoryAPI.Controllers
         public async Task<ActionResult<User>> PostUser([FromBody] User user)
         {
             user.CompanyId = ObtenerEmpresaSegura();
-            var lic = await db.CompanyLicenses.AsNoTracking().FirstOrDefaultAsync(x => x.CompanyId == user.CompanyId);
-            var count = await db.Users.CountAsync(x => x.CompanyId == user.CompanyId && x.IsActive);
-            if (lic != null && (!lic.IsEnabled || lic.ExpiresAt <= DateTime.UtcNow || count >= lic.MaxUsers))
-                return Conflict(new { error = "Licencia inactiva, vencida o límite de usuarios alcanzado." });
+
+            int companyId = user.CompanyId.Value;
+
+            (bool allowed, string? licenseError) =
+                await _licenseService.CanCreateUserAsync(companyId);
+
+            if (!allowed)
+            {
+                return Conflict(new { error = licenseError });
+            }
 
             var result = await _userService.CreateUserAsync(user, _env.ContentRootPath);
 
@@ -98,14 +105,13 @@ namespace InventoryAPI.Controllers
             return Ok(new { u.Id, u.Username, u.Email, u.RoleId, companyId = request.CompanyId, u.Token });
         }
 
+        // Compatibilidad con clientes antiguos: esta ruta no realiza cambios de contraseña.
+        // El flujo seguro se encuentra en api/password-recovery.
         [HttpPost("ChangeInitialPassword")]
         [AllowAnonymous]
-        public async Task<IActionResult> ChangeInitialPassword([FromBody] ChangePasswordRequest request)
+        public IActionResult ChangeInitialPassword()
         {
-            var result = await _userService.ChangeInitialPasswordAsync(request.UserId, request.NewPassword);
-            if (!result.Success) return NotFound(new { mensaje = result.Message });
-
-            return StatusCode(410, new { error = "Este mecanismo se reemplazó por solicitudes aprobadas en Gestión Dev." });
+            return StatusCode(410, new { error = "Utiliza la recuperación aprobada en Gestión Dev." });
         }
 
         [HttpPut("{id}/UpdatePhoto")]

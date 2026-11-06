@@ -1,4 +1,4 @@
-﻿using ControlInventario.Shared.Models;
+﻿using InventoryAPI.Models;
 using InventoryAPI.Data;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;

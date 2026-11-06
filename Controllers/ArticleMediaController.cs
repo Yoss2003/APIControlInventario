@@ -20,7 +20,7 @@ public sealed class ArticleMediaController(AppDbContext db, IWebHostEnvironment 
         _db.Inventories.Where(i => i.CompanyId == cid &&
             (IsDeveloper || i.UserId == uid || _db.SharedInventories.Any(sh => sh.InventoryId == i.Id &&
                 sh.CompanyId == cid && sh.UserId == uid &&
-                (!edit || sh.AccessLevel == ControlInventario.Shared.Models.SharedInventory.AccessMode.Editor)))).Select(i => i.Id);
+                (!edit || sh.AccessLevel == InventoryAPI.Models.SharedInventory.AccessMode.Editor)))).Select(i => i.Id);
 
     private static async Task<bool> ValidSignature(IFormFile file, bool allowPdf)
     {

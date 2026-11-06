@@ -1,0 +1,15 @@
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace InventoryAPI.Models
+{
+    public class InstallmentPayment
+    {
+        [Key]
+        public int Id { get; set; }
+        [Required] public int InstallmentId { get; set; }
+        public decimal PaymentAmount { get; set; }
+        [Required] public string PaymentDate { get; set; } = string.Empty;
+        public string? Observation { get; set; }
+        public int CompanyId { get; set; }
+    }
+}

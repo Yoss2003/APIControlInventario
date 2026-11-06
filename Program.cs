@@ -1,4 +1,4 @@
-using ControlInventario.Shared.Models;
+using InventoryAPI.Models;
 using InventoryAPI.Data;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
@@ -74,6 +74,7 @@ builder.Services.AddScoped<ISecurityQuestionService, SecurityQuestionService>();
 builder.Services.AddScoped<IThemeService, ThemeService>();
 builder.Services.AddScoped<ITimeZoneItemService, TimeZoneItemService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<ICompanyLicenseService, CompanyLicenseService>();
 
 builder.Services.AddScoped<IRolePermissionService, RolePermissionService>();
 builder.Services.AddScoped<ICategoryMeasurementUnitService, CategoryMeasurementUnitService>();

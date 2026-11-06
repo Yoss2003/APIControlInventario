@@ -635,7 +635,7 @@
           "Newtonsoft.Json": "13.0.4"
         },
         "runtime": {
-          "ControlInventario.Shared.dll": {
+          "ControlInventario.dll": {
             "assemblyVersion": "1.0.0.0",
             "fileVersion": "1.0.0.0"
           }

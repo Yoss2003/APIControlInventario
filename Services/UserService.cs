@@ -1,6 +1,6 @@
-﻿using ControlInventario.Shared.Helpers;
-using ControlInventario.Shared.Models;
-using ControlInventario.Shared.Models.DTO;
+﻿using InventoryAPI.Helpers;
+using InventoryAPI.Models;
+using InventoryAPI.Models.DTO;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
@@ -12,7 +12,6 @@ using System.Net;
 using System.Net.Mail;
 using System.Security.Claims;
 using System.Text;
-using InventoryAPI.Models;
 using InventoryAPI.Security;
 
 namespace InventoryAPI.Services

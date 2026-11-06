@@ -32,7 +32,7 @@ namespace InventoryAPI.Repositories
 
         public void Delete(T entity)
         {
-            if (entity is ControlInventario.Shared.Models.Interfaces.ISoftDelete softDeleteEntity)
+            if (entity is InventoryAPI.Models.Interfaces.ISoftDelete softDeleteEntity)
             {
                 softDeleteEntity.IsActive = false;
                 dbSet.Update(entity);

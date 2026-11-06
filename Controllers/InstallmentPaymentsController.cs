@@ -1,6 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services.IServices;
-using ControlInventario.Shared.Models;
+using InventoryAPI.Models;
 
 namespace InventoryAPI.Controllers
 {

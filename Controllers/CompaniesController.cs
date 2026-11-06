@@ -1,4 +1,4 @@
-using ControlInventario.Shared.Models;
+using InventoryAPI.Models;
 using InventoryAPI.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

@@ -22,7 +22,7 @@ namespace InventoryAPI.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.AccountReceivable", b =>
+            modelBuilder.Entity("ControlInventario.Models.AccountReceivable", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -68,7 +68,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("AccountsReceivables");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.ActionItem", b =>
+            modelBuilder.Entity("ControlInventario.Models.ActionItem", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -89,7 +89,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Actions");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Article", b =>
+            modelBuilder.Entity("ControlInventario.Models.Article", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -239,7 +239,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Articles");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.ArticleDetails", b =>
+            modelBuilder.Entity("ControlInventario.Models.ArticleDetails", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -289,7 +289,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("ArticleDetails");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Brand", b =>
+            modelBuilder.Entity("ControlInventario.Models.Brand", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -319,7 +319,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Brands");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Category", b =>
+            modelBuilder.Entity("ControlInventario.Models.Category", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -415,7 +415,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Categories");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.CategoryMeasurementUnit", b =>
+            modelBuilder.Entity("ControlInventario.Models.CategoryMeasurementUnit", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -439,7 +439,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("CategoryMeasurementUnits");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Company", b =>
+            modelBuilder.Entity("ControlInventario.Models.Company", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -478,7 +478,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Companies");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Currency", b =>
+            modelBuilder.Entity("ControlInventario.Models.Currency", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -499,7 +499,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Currencies");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Customer", b =>
+            modelBuilder.Entity("ControlInventario.Models.Customer", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -542,7 +542,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Customers");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.DateFormat", b =>
+            modelBuilder.Entity("ControlInventario.Models.DateFormat", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -560,7 +560,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("DateFormats");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Employee", b =>
+            modelBuilder.Entity("ControlInventario.Models.Employee", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -615,7 +615,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Employees");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.EmployeePermission", b =>
+            modelBuilder.Entity("ControlInventario.Models.EmployeePermission", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -649,7 +649,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("EmployeePermissions");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.ExchangeRate", b =>
+            modelBuilder.Entity("ControlInventario.Models.ExchangeRate", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -681,7 +681,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("ExchangeRates");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.ExportRoute", b =>
+            modelBuilder.Entity("ControlInventario.Models.ExportRoute", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -721,7 +721,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("ExportRoutes");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.HistoryLog", b =>
+            modelBuilder.Entity("ControlInventario.Models.HistoryLog", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -755,7 +755,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("HistoryLogs");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.InstallmentPayment", b =>
+            modelBuilder.Entity("ControlInventario.Models.InstallmentPayment", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -784,7 +784,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("InstallmentPayments");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Inventory", b =>
+            modelBuilder.Entity("ControlInventario.Models.Inventory", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -824,7 +824,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Inventories");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Language", b =>
+            modelBuilder.Entity("ControlInventario.Models.Language", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -841,7 +841,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Languages");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.MeasurementUnit", b =>
+            modelBuilder.Entity("ControlInventario.Models.MeasurementUnit", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -864,7 +864,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("MeasurementUnits");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Movement", b =>
+            modelBuilder.Entity("ControlInventario.Models.Movement", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -922,7 +922,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Movements");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Notification", b =>
+            modelBuilder.Entity("ControlInventario.Models.Notification", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -942,7 +942,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Notifications");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Parameters", b =>
+            modelBuilder.Entity("ControlInventario.Models.Parameters", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -974,7 +974,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Parameters");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Permission", b =>
+            modelBuilder.Entity("ControlInventario.Models.Permission", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -997,7 +997,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Permissions");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Profile", b =>
+            modelBuilder.Entity("ControlInventario.Models.Profile", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1077,7 +1077,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Profiles");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.RecoveryAttempt", b =>
+            modelBuilder.Entity("ControlInventario.Models.RecoveryAttempt", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1103,7 +1103,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("RecoveryAttempts");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Role", b =>
+            modelBuilder.Entity("ControlInventario.Models.Role", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1124,7 +1124,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Roles");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.RolePermission", b =>
+            modelBuilder.Entity("ControlInventario.Models.RolePermission", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1147,7 +1147,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("RolePermissions");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Sale", b =>
+            modelBuilder.Entity("ControlInventario.Models.Sale", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1194,7 +1194,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Sales");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.SaleDetail", b =>
+            modelBuilder.Entity("ControlInventario.Models.SaleDetail", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1227,7 +1227,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("SaleDetails");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.SalesMode", b =>
+            modelBuilder.Entity("ControlInventario.Models.SalesMode", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1245,7 +1245,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("SalesModes");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.SecurityQuestion", b =>
+            modelBuilder.Entity("ControlInventario.Models.SecurityQuestion", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1298,7 +1298,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("SecurityQuestions");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.SharedInventory", b =>
+            modelBuilder.Entity("ControlInventario.Models.SharedInventory", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1330,7 +1330,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("SharedInventories");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Supplier", b =>
+            modelBuilder.Entity("ControlInventario.Models.Supplier", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1401,7 +1401,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Suppliers");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Theme", b =>
+            modelBuilder.Entity("ControlInventario.Models.Theme", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1418,7 +1418,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("Themes");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.TimeZoneItem", b =>
+            modelBuilder.Entity("ControlInventario.Models.TimeZoneItem", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1436,7 +1436,7 @@ namespace InventoryAPI.Migrations
                     b.ToTable("TimeZones");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.User", b =>
+            modelBuilder.Entity("ControlInventario.Models.User", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -1706,42 +1706,42 @@ namespace InventoryAPI.Migrations
                     b.ToTable("SaleOperations");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.ArticleDetails", b =>
+            modelBuilder.Entity("ControlInventario.Models.ArticleDetails", b =>
                 {
-                    b.HasOne("ControlInventario.Shared.Models.Article", null)
+                    b.HasOne("ControlInventario.Models.Article", null)
                         .WithMany("Details")
                         .HasForeignKey("ArticleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.CategoryMeasurementUnit", b =>
+            modelBuilder.Entity("ControlInventario.Models.CategoryMeasurementUnit", b =>
                 {
-                    b.HasOne("ControlInventario.Shared.Models.Category", null)
+                    b.HasOne("ControlInventario.Models.Category", null)
                         .WithMany("CategoryMeasurementUnits")
                         .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Employee", b =>
+            modelBuilder.Entity("ControlInventario.Models.Employee", b =>
                 {
-                    b.HasOne("ControlInventario.Shared.Models.User", "User")
+                    b.HasOne("ControlInventario.Models.User", "User")
                         .WithOne("Employee")
-                        .HasForeignKey("ControlInventario.Shared.Models.Employee", "UserId");
+                        .HasForeignKey("ControlInventario.Models.Employee", "UserId");
 
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.RolePermission", b =>
+            modelBuilder.Entity("ControlInventario.Models.RolePermission", b =>
                 {
-                    b.HasOne("ControlInventario.Shared.Models.Permission", "Permission")
+                    b.HasOne("ControlInventario.Models.Permission", "Permission")
                         .WithMany("RolePermissions")
                         .HasForeignKey("PermissionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ControlInventario.Shared.Models.Role", "Role")
+                    b.HasOne("ControlInventario.Models.Role", "Role")
                         .WithMany("RolePermissions")
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1752,15 +1752,15 @@ namespace InventoryAPI.Migrations
                     b.Navigation("Role");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Sale", b =>
+            modelBuilder.Entity("ControlInventario.Models.Sale", b =>
                 {
-                    b.HasOne("ControlInventario.Shared.Models.SalesMode", "SalesMode")
+                    b.HasOne("ControlInventario.Models.SalesMode", "SalesMode")
                         .WithMany()
                         .HasForeignKey("SalesModeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ControlInventario.Shared.Models.User", "User")
+                    b.HasOne("ControlInventario.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1771,9 +1771,9 @@ namespace InventoryAPI.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.SaleDetail", b =>
+            modelBuilder.Entity("ControlInventario.Models.SaleDetail", b =>
                 {
-                    b.HasOne("ControlInventario.Shared.Models.Sale", "Sale")
+                    b.HasOne("ControlInventario.Models.Sale", "Sale")
                         .WithMany("SaleDetails")
                         .HasForeignKey("SaleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1782,15 +1782,15 @@ namespace InventoryAPI.Migrations
                     b.Navigation("Sale");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.SharedInventory", b =>
+            modelBuilder.Entity("ControlInventario.Models.SharedInventory", b =>
                 {
-                    b.HasOne("ControlInventario.Shared.Models.Inventory", "Inventory")
+                    b.HasOne("ControlInventario.Models.Inventory", "Inventory")
                         .WithMany()
                         .HasForeignKey("InventoryId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("ControlInventario.Shared.Models.User", "User")
+                    b.HasOne("ControlInventario.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1801,13 +1801,13 @@ namespace InventoryAPI.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.User", b =>
+            modelBuilder.Entity("ControlInventario.Models.User", b =>
                 {
-                    b.HasOne("ControlInventario.Shared.Models.Company", "Company")
+                    b.HasOne("ControlInventario.Models.Company", "Company")
                         .WithMany("Users")
                         .HasForeignKey("CompanyId");
 
-                    b.HasOne("ControlInventario.Shared.Models.Role", "Role")
+                    b.HasOne("ControlInventario.Models.Role", "Role")
                         .WithMany()
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -1820,19 +1820,19 @@ namespace InventoryAPI.Migrations
 
             modelBuilder.Entity("InventoryAPI.Models.ArticleAssignment", b =>
                 {
-                    b.HasOne("ControlInventario.Shared.Models.Article", null)
+                    b.HasOne("ControlInventario.Models.Article", null)
                         .WithMany()
                         .HasForeignKey("ArticleId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("ControlInventario.Shared.Models.Inventory", null)
+                    b.HasOne("ControlInventario.Models.Inventory", null)
                         .WithMany()
                         .HasForeignKey("InventoryId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("ControlInventario.Shared.Models.User", null)
+                    b.HasOne("ControlInventario.Models.User", null)
                         .WithMany()
                         .HasForeignKey("RecipientUserId")
                         .OnDelete(DeleteBehavior.Restrict);
@@ -1849,37 +1849,37 @@ namespace InventoryAPI.Migrations
                     b.Navigation("Assignment");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Article", b =>
+            modelBuilder.Entity("ControlInventario.Models.Article", b =>
                 {
                     b.Navigation("Details");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Category", b =>
+            modelBuilder.Entity("ControlInventario.Models.Category", b =>
                 {
                     b.Navigation("CategoryMeasurementUnits");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Company", b =>
+            modelBuilder.Entity("ControlInventario.Models.Company", b =>
                 {
                     b.Navigation("Users");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Permission", b =>
+            modelBuilder.Entity("ControlInventario.Models.Permission", b =>
                 {
                     b.Navigation("RolePermissions");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Role", b =>
+            modelBuilder.Entity("ControlInventario.Models.Role", b =>
                 {
                     b.Navigation("RolePermissions");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.Sale", b =>
+            modelBuilder.Entity("ControlInventario.Models.Sale", b =>
                 {
                     b.Navigation("SaleDetails");
                 });
 
-            modelBuilder.Entity("ControlInventario.Shared.Models.User", b =>
+            modelBuilder.Entity("ControlInventario.Models.User", b =>
                 {
                     b.Navigation("Employee");
                 });

@@ -1,4 +1,4 @@
-using ControlInventario.Shared.Helpers;
+using InventoryAPI.Helpers;
 using System.Security.Cryptography;
 
 namespace InventoryAPI.Security;

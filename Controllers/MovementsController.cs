@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services;
 using InventoryAPI.Services.IServices;
-using ControlInventario.Shared.Models;
+using InventoryAPI.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace InventoryAPI.Controllers

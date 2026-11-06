@@ -1,6 +1,5 @@
-using ControlInventario.Shared.Models;
-using InventoryAPI.Data;
 using InventoryAPI.Models;
+using InventoryAPI.Data;
 using InventoryAPI.Services.IServices;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
