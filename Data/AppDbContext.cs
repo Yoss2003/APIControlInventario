@@ -1,19 +1,17 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using ControlInventario.Shared.Models;
+using InventoryAPI.Models;
 
 namespace InventoryAPI.Data
 {
     public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
     {
-        // 1. Core e Inventario
         public DbSet<Inventory> Inventories { get; set; }
         public DbSet<Parameters> Parameters { get; set; }
         public DbSet<Category> Categories { get; set; }
         public DbSet<Brand> Brands { get; set; }
         public DbSet<Article> Articles { get; set; }
         public DbSet<Supplier> Suppliers { get; set; }
-
-        // 2. Configuración y Catálogos (Tablas Maestras)
         public DbSet<ActionItem> Actions { get; set; }
         public DbSet<Language> Languages { get; set; }
         public DbSet<Theme> Themes { get; set; }
@@ -23,8 +21,6 @@ namespace InventoryAPI.Data
         public DbSet<DateFormat> DateFormats { get; set; }
         public DbSet<MeasurementUnit> MeasurementUnits { get; set; }
         public DbSet<SalesMode> SalesModes { get; set; }
-
-        // 3. Usuarios y Personal
         public DbSet<User> Users { get; set; }
         public DbSet<Role> Roles { get; set; }
         public DbSet<Permission> Permissions { get; set; }
@@ -33,15 +29,11 @@ namespace InventoryAPI.Data
         public DbSet<Customer> Customers { get; set; }
         public DbSet<Profile> Profiles { get; set; }
         public DbSet<Company> Companies { get; set; }
-
-        // 4. Transacciones y Finanzas
         public DbSet<Movement> Movements { get; set; }
         public DbSet<AccountReceivable> AccountsReceivables { get; set; }
         public DbSet<InstallmentPayment> InstallmentPayments { get; set; }
         public DbSet<Sale> Sales { get; set; }
         public DbSet<SaleDetail> SaleDetails { get; set; }
-
-        // 5. Seguridad y Logs
         public DbSet<SecurityQuestion> SecurityQuestions { get; set; }
         public DbSet<RecoveryAttempt> RecoveryAttempts { get; set; }
         public DbSet<HistoryLog> HistoryLogs { get; set; }
@@ -50,14 +42,40 @@ namespace InventoryAPI.Data
         public DbSet<EmployeePermission> EmployeePermissions { get; set; }
         public DbSet<SharedInventory> SharedInventories { get; set; }
         public DbSet<CategoryMeasurementUnit> CategoryMeasurementUnits { get; set; }
+        public DbSet<ArticleAssignment> ArticleAssignments { get; set; }
+        public DbSet<ArticleAssignmentEvent> ArticleAssignmentEvents { get; set; }
+        public DbSet<MovementCancellation> MovementCancellations { get; set; }
+        public DbSet<SaleOperation> SaleOperations { get; set; }
+        public DbSet<SaleCancellation> SaleCancellations { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-
             modelBuilder.Entity<AccountReceivable>()
-            .Property(a => a.InstallmentAmount)
-            .HasColumnType("decimal(18,2)");
+                .Property(a => a.InstallmentAmount).HasColumnType("decimal(18,2)");
+
+            modelBuilder.Entity<ArticleAssignment>(e =>
+            {
+                e.HasIndex(x => x.OperationKey).IsUnique();
+                e.HasIndex(x => new { x.CompanyId, x.InventoryId, x.ArticleId });
+                e.HasIndex(x => new { x.CompanyId, x.RecipientUserId });
+                e.HasOne<Inventory>().WithMany().HasForeignKey(x => x.InventoryId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne<Article>().WithMany().HasForeignKey(x => x.ArticleId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne<User>().WithMany().HasForeignKey(x => x.RecipientUserId).OnDelete(DeleteBehavior.Restrict);
+            });
+            modelBuilder.Entity<SaleOperation>().HasIndex(x => x.OperationKey).IsUnique();
+            modelBuilder.Entity<SaleCancellation>().HasIndex(x => x.SaleId).IsUnique();
+            modelBuilder.Entity<MovementCancellation>(e =>
+            {
+                e.HasIndex(x => x.OriginalMovementId).IsUnique();
+                e.HasIndex(x => x.ReversalMovementId).IsUnique();
+            });
+            modelBuilder.Entity<ArticleAssignmentEvent>(e =>
+            {
+                e.HasIndex(x => x.OperationKey).IsUnique();
+                e.HasOne(x => x.Assignment).WithMany(x => x.Events)
+                    .HasForeignKey(x => x.AssignmentId).OnDelete(DeleteBehavior.Restrict);
+            });
         }
     }
 }

@@ -1,86 +1,78 @@
-﻿using ControlInventario.Shared.Models;
+using ControlInventario.Shared.Models;
+using InventoryAPI.Data;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
+using Microsoft.EntityFrameworkCore;
 
-namespace InventoryAPI.Services
+namespace InventoryAPI.Services;
+
+// Una venta y sus movimientos se confirman en una única transacción.
+public class SaleService(IWorkFlow workFlow, AppDbContext db)
+    : WorkContainer<Sale>(workFlow), ISaleService
 {
-    public class SaleService(IWorkFlow workFlow) : WorkContainer<Sale>(workFlow), ISaleService
+    public async Task<(bool Success, string Message)> ProcessSaleAsync(Sale sale)
     {
-        public async Task<(bool Success, string Message)> ProcessSaleAsync(Sale nuevaVenta)
+        if (sale.SaleDetails == null || sale.SaleDetails.Count == 0 || sale.CompanyId <= 0 || sale.UserId <= 0)
+            return (false, "Venta sin usuario, empresa o artículos.");
+        if (sale.SaleDetails.Any(d => d.Quantity <= 0 || d.UnitPrice < 0))
+            return (false, "Todos los artículos requieren una cantidad positiva y precio no negativo.");
+        if (!await db.Users.AnyAsync(u => u.Id == sale.UserId && u.CompanyId == sale.CompanyId && u.IsActive))
+            return (false, "Usuario vendedor no autorizado.");
+
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        try
         {
-            if (nuevaVenta == null || nuevaVenta.SaleDetails == null || nuevaVenta.SaleDetails.Count == 0)
+            var summary = sale.SaleDetails.GroupBy(d => d.ArticleId).OrderBy(g => g.Key)
+                .Select(g => new { ArticleId = g.Key, Quantity = g.Sum(d => d.Quantity) }).ToArray();
+            var locked = new Dictionary<int, Article>();
+            foreach (var item in summary)
             {
-                return (false, "Datos de venta inválidos o carrito vacío.");
+                var article = await db.Articles.FromSqlInterpolated(
+                    $"SELECT * FROM \"Articles\" WHERE \"Id\" = {item.ArticleId} AND \"CompanyId\" = {sale.CompanyId} FOR UPDATE")
+                    .SingleOrDefaultAsync();
+                if (article == null || !article.IsActive)
+                    return (false, $"Artículo #{item.ArticleId} no disponible.");
+                if (item.Quantity > article.Stock)
+                    return (false, $"Stock insuficiente de {article.Name}.");
+                if (article.Tracking.ToString() == "Serialized" && item.Quantity != decimal.Truncate(item.Quantity))
+                    return (false, "Los artículos serializados se venden por unidades completas.");
+                locked[article.Id] = article;
             }
 
-            try
+            sale.Id = 0;
+            sale.SaleDate = DateTime.UtcNow;
+            sale.TotalAmount = sale.SaleDetails.Sum(d => d.Quantity * d.UnitPrice);
+            foreach (var d in sale.SaleDetails)
             {
-                nuevaVenta.SaleDate = DateTime.UtcNow;
-
-                var userMatch = await _workFlow.Repository<User>().FindAsync(u => u.Id == nuevaVenta.UserId);
-                var vendedorUser = userMatch.FirstOrDefault();
-                var empMatch = await _workFlow.Repository<Employee>().FindAsync(e => e.UserId == nuevaVenta.UserId || e.Id == nuevaVenta.UserId);
-                var vendedorEmpleado = empMatch.FirstOrDefault();
-
-                if (vendedorEmpleado == null)
+                d.Id = 0; d.SaleId = 0; d.CompanyId = sale.CompanyId;
+                d.SubTotal = d.Quantity * d.UnitPrice;
+            }
+            db.Sales.Add(sale);
+            foreach (var item in summary)
+            {
+                locked[item.ArticleId].Stock -= item.Quantity;
+                locked[item.ArticleId].ModificationDate = DateTime.UtcNow;
+            }
+            await db.SaveChangesAsync();
+            foreach (var detail in sale.SaleDetails)
+            {
+                db.Movements.Add(new Movement
                 {
-                    return (false, "El usuario actual no tiene un perfil de Empleado asociado. No se puede registrar el movimiento de stock.");
-                }
-
-                string nombreVendedor = $"{vendedorEmpleado.FirstName} {vendedorEmpleado.LastName}".Trim();
-
-                string nombreCliente = string.IsNullOrWhiteSpace(nuevaVenta.CustomerName)
-                    ? "Público General"
-                    : nuevaVenta.CustomerName;
-
-                foreach (var detalle in nuevaVenta.SaleDetails)
-                {
-                    var articulo = await _workFlow.Repository<Article>().GetByIdAsync(detalle.ArticleId);
-
-                    if (articulo == null) return (false, $"Artículo {detalle.ArticleId} no existe.");
-                    if (articulo.Stock < detalle.Quantity) return (false, $"Stock insuficiente para {articulo.Name}.");
-
-                    articulo.Stock -= (decimal)detalle.Quantity;
-                    articulo.ModificationDate = DateTime.UtcNow;
-
-                    var nuevoMovimiento = new Movement
-                    {
-                        CompanyId = nuevaVenta.CompanyId,
-                        ArticleId = articulo.Id,
-                        EmployeeId = vendedorEmpleado.Id,
-                        ActionId = 2,
-                        MovementDate = DateTime.UtcNow,
-                        Observation = nuevaVenta.Notes,
-                        Amount = detalle.Quantity,
-                        SalePrice = detalle.UnitPrice,
-                        PaymentMethod = nuevaVenta.PaymentType.ToString(),
-                        Recipient = nombreCliente
-                    };
-                    await _workFlow.Repository<Movement>().AddAsync(nuevoMovimiento);
-
-                    var nuevoLog = new HistoryLog
-                    {
-                        CompanyId = nuevaVenta.CompanyId,
-                        LogDate = DateTime.UtcNow,
-                        Username = nombreVendedor,
-                        ModuleName = "Ventas",
-                        ActionName = "Venta",
-                        Detail = $"Producto \"{articulo.Name}\" vendido por \"{nombreVendedor}\" el \"{DateTime.Now:dd/MM/yyyy HH:mm}\" a \"{nombreCliente}\""
-                    };
-                    await _workFlow.Repository<HistoryLog>().AddAsync(nuevoLog);
-                }
-
-                await _workFlow.Repository<Sale>().AddAsync(nuevaVenta);
-                await _workFlow.CompleteAsync();
-
-                return (true, "Venta procesada con éxito, stock actualizado y movimientos registrados.");
+                    ArticleId = detail.ArticleId, CompanyId = sale.CompanyId,
+                    ActionId = 2, MovementDate = DateTime.UtcNow, Amount = detail.Quantity,
+                    Recipient = string.IsNullOrWhiteSpace(sale.CustomerName) ? "Público general" : sale.CustomerName,
+                    PaymentMethod = sale.PaymentType.ToString(), SalePrice = detail.UnitPrice,
+                    DocumentNumber = $"VENTA-{sale.Id}", Observation = sale.Notes
+                });
             }
-            catch (Exception ex)
-            {
-                var errorReal = ex.GetBaseException().Message;
-                return (false, $"Error crítico en el servidor: {errorReal}");
-            }
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return (true, "Venta confirmada con stock y movimientos consistentes.");
+        }
+        catch (DbUpdateException)
+        {
+            return (false, "La venta no pudo registrarse; se revirtió la operación.");
         }
     }
 }

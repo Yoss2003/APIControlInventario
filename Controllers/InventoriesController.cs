@@ -1,110 +1,113 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using InventoryAPI.Services.IServices;
 using ControlInventario.Shared.Models;
 using ControlInventario.Shared.Models.DTO;
+using InventoryAPI.Data;
+using InventoryAPI.Services.IServices;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
-namespace InventoryAPI.Controllers
+namespace InventoryAPI.Controllers;
+
+public class InventoriesController(IInventoryService inventoryService, AppDbContext db) : BaseApiController
 {
-    public class InventoriesController(IInventoryService inventoryService) : BaseApiController
+    private readonly IInventoryService _service = inventoryService;
+    private readonly AppDbContext _db = db;
+
+    private bool TryScope(out int companyId, out int userId)
     {
-        private readonly IInventoryService _inventoryService = inventoryService;
+        userId = ObtenerUsuarioSeguro();
+        return int.TryParse(User.FindFirst("CompanyId")?.Value, out companyId) &&
+            userId > 0 && companyId > 0;
+    }
+    private IQueryable<Inventory> Readable(int companyId, int userId) =>
+        _db.Inventories.AsNoTracking().Where(i => i.CompanyId == companyId &&
+            (i.UserId == userId || _db.SharedInventories.Any(s =>
+                s.InventoryId == i.Id && s.UserId == userId && s.CompanyId == companyId)));
 
-        [HttpGet]
-        public async Task<IActionResult> GetInventories()
-        {
-            int companyId = ObtenerEmpresaSegura();
-            return Ok(await _inventoryService.GetAllByCompanyIdAsync(companyId));
-        }
+    [HttpGet]
+    public async Task<IActionResult> GetInventories()
+    {
+        if (!TryScope(out var company, out var user)) return Unauthorized();
+        return Ok(await Readable(company, user).OrderBy(i => i.Alias ?? i.InventoryName).ToListAsync());
+    }
 
-        [HttpGet("{id:int}")]
-        public async Task<IActionResult> GetInventory(int id)
-        {
-            int companyId = ObtenerEmpresaSegura();
-            var inventory = await _inventoryService.GetByIdAsync(id);
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetInventory(int id)
+    {
+        if (!TryScope(out var company, out var user)) return Unauthorized();
+        var item = await Readable(company, user).FirstOrDefaultAsync(i => i.Id == id);
+        return item == null ? NotFound() : Ok(item);
+    }
 
-            if (inventory == null || inventory.CompanyId != companyId) return NotFound();
-            return Ok(inventory);
-        }
+    [HttpPost]
+    public async Task<IActionResult> PostInventory([FromBody] Inventory inventory)
+    {
+        if (!TryScope(out var company, out var user)) return Unauthorized();
+        if (!ModelState.IsValid || string.IsNullOrWhiteSpace(inventory.InventoryName)) return BadRequest(ModelState);
+        inventory.Id = 0; inventory.CompanyId = company; inventory.UserId = user;
+        inventory.CreationDate = DateTime.UtcNow; inventory.ModificationDate = DateTime.UtcNow;
+        inventory.IsActive = true;
+        inventory.Username = await _db.Users.Where(u => u.Id == user).Select(u => u.Username).FirstOrDefaultAsync() ?? string.Empty;
+        _db.Inventories.Add(inventory);
+        await _db.SaveChangesAsync();
+        return CreatedAtAction(nameof(GetInventory), new { id = inventory.Id }, inventory);
+    }
 
-        [HttpPut("{id:int}")]
-        public async Task<IActionResult> PutInventory(int id, [FromBody] Inventory inventory)
-        {
-            if (id != inventory.Id) return BadRequest();
-            if (!ModelState.IsValid) return BadRequest(ModelState);
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> PutInventory(int id, [FromBody] Inventory update)
+    {
+        if (!TryScope(out var company, out var user)) return Unauthorized();
+        if (id != update.Id || !ModelState.IsValid) return BadRequest();
+        var inventory = await _db.Inventories.FirstOrDefaultAsync(i => i.Id == id && i.CompanyId == company && i.UserId == user);
+        if (inventory == null) return NotFound();
+        if (string.IsNullOrWhiteSpace(update.InventoryName)) return BadRequest(new { error = "El nombre del inventario es obligatorio." });
+        inventory.InventoryName = update.InventoryName.Trim(); inventory.Alias = update.Alias?.Trim();
+        inventory.ModificationDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
 
-            int companyId = ObtenerEmpresaSegura();
-            inventory.CompanyId = companyId;
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> DeleteInventory(int id)
+    {
+        if (!TryScope(out var company, out var user)) return Unauthorized();
+        var inventory = await _db.Inventories.FirstOrDefaultAsync(i => i.Id == id && i.CompanyId == company && i.UserId == user);
+        if (inventory == null) return NotFound();
+        if (await _db.Articles.AnyAsync(a => a.InventoryId == id && a.IsActive))
+            return Conflict(new { error = "Antes de desactivar este inventario debes resolver sus artículos activos." });
+        inventory.IsActive = false; inventory.ModificationDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
 
-            var existingInventory = await _inventoryService.GetByIdAsync(id);
-            if (existingInventory == null || existingInventory.CompanyId != companyId) return NotFound();
+    [HttpPost("Share")]
+    public async Task<IActionResult> ShareInventory([FromBody] ShareRequestDTO request)
+    {
+        if (!TryScope(out var company, out var user)) return Unauthorized();
+        if (!await _db.Inventories.AnyAsync(i => i.Id == request.InventoryId && i.CompanyId == company && i.UserId == user))
+            return Forbid();
+        var result = await _service.ShareInventoryAsync(request);
+        return result.Success ? Ok(new { message = result.Message }) : BadRequest(new { error = result.Message });
+    }
 
-            var success = await _inventoryService.UpdateAsync(inventory);
-            if (!success) return BadRequest("No se pudo actualizar el inventario.");
+    [HttpGet("{inventoryId:int}/Shared")]
+    public async Task<IActionResult> GetSharedInventories(int inventoryId)
+    {
+        if (!TryScope(out var company, out var user)) return Unauthorized();
+        if (!await _db.Inventories.AnyAsync(i => i.Id == inventoryId && i.CompanyId == company && i.UserId == user))
+            return Forbid();
+        var records = await _service.GetSharedInventoriesAsync(inventoryId);
+        return Ok(records.Select(x => new { x.Id, x.InventoryId, x.UserId,
+            username = x.User?.Username, x.AccessLevel, x.SharedDate }));
+    }
 
-            return NoContent();
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> PostInventory([FromBody] Inventory inventory)
-        {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            inventory.CompanyId = ObtenerEmpresaSegura();
-            var success = await _inventoryService.CreateAsync(inventory);
-
-            if (!success) return BadRequest("No se pudo crear.");
-            return CreatedAtAction(nameof(GetInventory), new { id = inventory.Id }, inventory);
-        }
-
-        [HttpDelete("{id:int}")]
-        public async Task<IActionResult> DeleteInventory(int id)
-        {
-            int companyId = ObtenerEmpresaSegura();
-            string deletedBy = ObtenerUsuarioSeguro().ToString();
-
-            var existingInventory = await _inventoryService.GetByIdAsync(id);
-            if (existingInventory == null || existingInventory.CompanyId != companyId) return NotFound();
-
-            var success = await _inventoryService.DeleteAsync(id, deletedBy);
-            if (!success) return BadRequest("No se pudo eliminar el inventario.");
-
-            return NoContent();
-        }
-
-        [HttpPost("Share")]
-        public async Task<IActionResult> ShareInventory([FromBody] ShareRequestDTO request)
-        {
-            int companyId = ObtenerEmpresaSegura();
-
-            var existingInventory = await _inventoryService.GetByIdAsync(request.InventoryId);
-            if (existingInventory == null || existingInventory.CompanyId != companyId)
-                return NotFound(new { mensaje = "Inventario no encontrado." });
-
-            var (Success, Message) = await _inventoryService.ShareInventoryAsync(request);
-            if (!Success) return BadRequest(new { mensaje = Message });
-
-            return Ok(new { mensaje = Message });
-        }
-
-        [HttpGet("{inventoryId:int}/Shared")]
-        public async Task<IActionResult> GetSharedInventories(int inventoryId)
-        {
-            int companyId = ObtenerEmpresaSegura();
-            var existingInventory = await _inventoryService.GetByIdAsync(inventoryId);
-
-            if (existingInventory == null || existingInventory.CompanyId != companyId) return NotFound();
-
-            var sharedList = await _inventoryService.GetSharedInventoriesAsync(inventoryId);
-            return Ok(sharedList);
-        }
-
-        [HttpDelete("Revoke/{sharedInventoryId:int}")]
-        public async Task<IActionResult> RevokeAccess(int sharedInventoryId)
-        {
-            var success = await _inventoryService.RevokeAccessAsync(sharedInventoryId);
-            if (!success) return BadRequest(new { error = "No se pudo revocar el acceso." });
-
-            return Ok(new { mensaje = "Acceso revocado correctamente." });
-        }
+    [HttpDelete("Revoke/{sharedInventoryId:int}")]
+    public async Task<IActionResult> RevokeAccess(int sharedInventoryId)
+    {
+        if (!TryScope(out var company, out var user)) return Unauthorized();
+        var valid = await _db.SharedInventories.AnyAsync(s => s.Id == sharedInventoryId && s.CompanyId == company &&
+            _db.Inventories.Any(i => i.Id == s.InventoryId && i.UserId == user && i.CompanyId == company));
+        if (!valid) return Forbid();
+        return await _service.RevokeAccessAsync(sharedInventoryId)
+            ? NoContent() : Conflict(new { error = "No se pudo revocar el permiso." });
     }
 }

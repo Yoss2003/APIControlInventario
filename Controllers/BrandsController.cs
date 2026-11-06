@@ -32,12 +32,12 @@ namespace InventoryAPI.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             int companyId = ObtenerEmpresaSegura();
-            brand.CompanyId = companyId;
 
             var existingBrand = await _brandService.GetByIdAsync(id);
             if (existingBrand == null || existingBrand.CompanyId != companyId) return NotFound("Marca no encontrada.");
 
-            var success = await _brandService.UpdateAsync(brand);
+            existingBrand.Name = brand.Name.Trim();
+            var success = await _brandService.UpdateAsync(existingBrand);
             if (!success) return BadRequest("No se pudo actualizar.");
 
             return NoContent();
@@ -64,7 +64,8 @@ namespace InventoryAPI.Controllers
             var existingBrand = await _brandService.GetByIdAsync(id);
             if (existingBrand == null || existingBrand.CompanyId != companyId) return NotFound("Marca no encontrada.");
 
-            var success = await _brandService.DeleteAsync(id, deletedBy);
+            existingBrand.IsActive = false;
+            var success = await _brandService.UpdateAsync(existingBrand);
             if (!success) return BadRequest("No se pudo eliminar la marca.");
 
             return NoContent();

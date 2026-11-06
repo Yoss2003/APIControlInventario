@@ -1,129 +1,205 @@
-﻿using ControlInventario.Shared.Models;
+using ControlInventario.Shared.Models;
+using InventoryAPI.Data;
 using InventoryAPI.Services.IServices;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
-namespace InventoryAPI.Controllers
+namespace InventoryAPI.Controllers;
+
+public class ArticlesController(IArticleService articleService, AppDbContext db) : BaseApiController
 {
-    public class ArticlesController(IArticleService articleService) : BaseApiController
+    private readonly IArticleService _service = articleService;
+    private readonly AppDbContext _db = db;
+    private bool TryCompany(out int companyId) =>
+        int.TryParse(User.FindFirst("CompanyId")?.Value, out companyId) && companyId > 0;
+
+    // No confundir custodia con permiso de lectura de un almacén.
+    private IQueryable<int> AccessibleInventories(int companyId, int userId, bool edit = false) =>
+        _db.Inventories.Where(i => i.CompanyId == companyId &&
+            (i.UserId == userId || _db.SharedInventories.Any(share =>
+                share.InventoryId == i.Id && share.UserId == userId && share.CompanyId == companyId &&
+                (!edit || share.AccessLevel == SharedInventory.AccessMode.Editor))))
+            .Select(i => i.Id);
+
+    [HttpGet]
+    public async Task<IActionResult> GetArticles()
     {
-        private readonly IArticleService _articleService = articleService;
+        if (!TryCompany(out var companyId)) return Unauthorized();
+        var permitted = AccessibleInventories(companyId, ObtenerUsuarioSeguro());
+        return Ok(await _db.Articles.AsNoTracking().Where(a => a.CompanyId == companyId && permitted.Contains(a.InventoryId))
+            .Include(a => a.Details).OrderBy(a => a.Name).ToListAsync());
+    }
 
-        [HttpGet]
-        public async Task<IActionResult> GetArticles()
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetArticle(int id)
+    {
+        if (!TryCompany(out var companyId)) return Unauthorized();
+        var permitted = AccessibleInventories(companyId, ObtenerUsuarioSeguro());
+        var article = await _db.Articles.AsNoTracking().Include(a => a.Details)
+            .FirstOrDefaultAsync(a => a.Id == id && a.CompanyId == companyId && permitted.Contains(a.InventoryId));
+        return article is null ? NotFound() : Ok(article);
+    }
+
+    private async Task<string?> ValidateMasterData(Article article, int companyId)
+    {
+        if (!await AccessibleInventories(companyId, ObtenerUsuarioSeguro(), true).ContainsAsync(article.InventoryId))
+            return "No tienes permiso para modificar este almacén.";
+        if (!await _db.Categories.AnyAsync(c => c.Id == article.CategoryId && c.CompanyId == companyId && c.IsActive && c.InventoryId == article.InventoryId))
+            return "La categoría no pertenece al inventario o está inactiva.";
+        if (article.BrandId.HasValue && !await _db.Brands.AnyAsync(b => b.Id == article.BrandId && b.CompanyId == companyId && b.CategoryId == article.CategoryId && b.IsActive))
+            return "La marca no pertenece a esta categoría.";
+        if (string.IsNullOrWhiteSpace(article.Code) || string.IsNullOrWhiteSpace(article.Name))
+            return "Código y nombre del artículo son obligatorios.";
+        if (article.Stock < 0) return "El stock no puede ser negativo.";
+        return null;
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> PostArticle([FromBody] Article article)
+    {
+        if (!TryCompany(out var companyId)) return Unauthorized();
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        article.CompanyId = companyId;
+        article.Id = 0;
+        article.RegistrationDate = DateTime.UtcNow;
+        var error = await ValidateMasterData(article, companyId);
+        if (error != null) return BadRequest(new { error });
+        if (await _db.Articles.AnyAsync(a => a.CompanyId == companyId && a.InventoryId == article.InventoryId && a.Code == article.Code && a.IsActive))
+            return Conflict(new { error = "El código ya existe en este inventario." });
+        // EF administra la FK ArticleId de las series incluidas al crear.
+        foreach (var d in article.Details) { d.Id = 0; d.IsActive = true; d.RegistrationDate = DateTime.UtcNow; }
+        try
         {
-            int companyId = ObtenerEmpresaSegura();
-            return Ok(await _articleService.GetAllByCompanyIdAsync(companyId));
-        }
-
-        [HttpGet("{id}")]
-        public async Task<IActionResult> GetArticle(int id)
-        {
-            int companyId = ObtenerEmpresaSegura();
-            var article = await _articleService.GetByIdAsync(id);
-
-            if (article == null || article.CompanyId != companyId) return NotFound();
-            return Ok(article);
-        }
-
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutArticle(int id, [FromBody] Article article)
-        {
-            if (id != article.Id) return BadRequest();
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            int companyId = ObtenerEmpresaSegura();
-            article.CompanyId = companyId;
-
-            var success = await _articleService.UpdateArticleWithAuditAsync(id, article, companyId);
-            if (!success) return BadRequest(new { error = "El artículo no existe o no se pudo actualizar." });
-
-            return NoContent();
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> PostArticle([FromBody] Article article)
-        {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            article.CompanyId = ObtenerEmpresaSegura();
-            var success = await _articleService.CreateAsync(article);
-
-            if (!success) return BadRequest("No se pudo crear el artículo.");
+            if (!await _service.CreateAsync(article)) return BadRequest(new { error = "No se pudo crear." });
             return CreatedAtAction(nameof(GetArticle), new { id = article.Id }, article);
         }
-
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteArticle(int id)
+        catch (DbUpdateException)
         {
-            int companyId = ObtenerEmpresaSegura();
-            string deletedBy = ObtenerUsuarioSeguro().ToString();
-
-            var existingArticle = await _articleService.GetByIdAsync(id);
-            if (existingArticle == null || existingArticle.CompanyId != companyId) return NotFound();
-
-            var success = await _articleService.DeleteAsync(id, deletedBy);
-            if (!success) return BadRequest("No se pudo eliminar el artículo.");
-
-            return NoContent();
+            return Conflict(new { error = "No se pudo guardar: verifica referencias y códigos duplicados." });
         }
+    }
 
-        [HttpGet("count/inventory/{inventoryId}")]
-        public async Task<IActionResult> GetArticleCount(int inventoryId)
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> PutArticle(int id, [FromBody] Article update)
+    {
+        if (!TryCompany(out var companyId)) return Unauthorized();
+        if (id != update.Id || !ModelState.IsValid) return BadRequest(ModelState);
+        update.CompanyId = companyId;
+        var error = await ValidateMasterData(update, companyId);
+        if (error != null) return BadRequest(new { error });
+
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        var current = await _db.Articles.FromSqlInterpolated(
+            $"SELECT * FROM \"Articles\" WHERE \"Id\" = {id} AND \"CompanyId\" = {companyId} FOR UPDATE")
+            .SingleOrDefaultAsync();
+        if (current is null) return NotFound();
+        await _db.Entry(current).Collection(a => a.Details).LoadAsync();
+        if (!await AccessibleInventories(companyId, ObtenerUsuarioSeguro(), true).ContainsAsync(current.InventoryId)) return Forbid();
+        if (!current.IsActive) return Conflict(new { error = "No se edita un artículo inactivo." });
+        if (current.InventoryId != update.InventoryId || current.Tracking != update.Tracking)
+            return Conflict(new { error = "No se puede cambiar el almacén ni el tipo de tracking de un artículo existente." });
+        if (await _db.Articles.AnyAsync(a => a.Id != id && a.CompanyId == companyId && a.InventoryId == current.InventoryId && a.Code == update.Code && a.IsActive))
+            return Conflict(new { error = "El código ya está utilizado por otro artículo." });
+        if (await _db.ArticleAssignments.AnyAsync(a => a.ArticleId == id && a.CompanyId == companyId && a.Quantity > a.ReturnedQuantity) &&
+            update.Stock != current.Stock)
+            return Conflict(new { error = "Hay custodias vigentes: el stock se modifica con operaciones, no editando el artículo." });
+
+        var stockDelta = update.Stock - current.Stock;
+        current.Name = update.Name.Trim(); current.Code = update.Code.Trim();
+        current.Barcode = update.Barcode; current.Model = update.Model;
+        current.Presentation = update.Presentation;
+        current.SerialNumber = update.SerialNumber;
+        current.CategoryId = update.CategoryId; current.BrandId = update.BrandId;
+        current.MeasurementUnit = update.MeasurementUnit;
+        current.AcquisitionUnit = update.AcquisitionUnit;
+        current.SaleUnit = update.SaleUnit; current.ConversionFactor = update.ConversionFactor;
+        current.AcquisitionPrice = update.AcquisitionPrice;
+        current.AcquisitionCurrency = update.AcquisitionCurrency;
+        current.SalePrice = update.SalePrice; current.SaleCurrency = update.SaleCurrency;
+        current.Characteristics = update.Characteristics;
+        current.Stock = update.Stock;
+        current.ModificationDate = DateTime.UtcNow;
+
+        if (current.Tracking.ToString() == "Serialized" && update.Details.Count > 0 && current.Details.Count == 1)
         {
-            try { return Ok(await _articleService.GetArticleCountByInventoryIdAsync(inventoryId)); }
-            catch { return Ok(0); }
+            var from = update.Details.First(); var to = current.Details.First();
+            to.SerialNumber = from.SerialNumber;
+            to.Attr1 = from.Attr1; to.Attr2 = from.Attr2; to.Attr3 = from.Attr3;
+            to.Attr4 = from.Attr4; to.Attr5 = from.Attr5; to.Attr6 = from.Attr6;
         }
-
-        [HttpGet("barcode/{barcode}")]
-        public async Task<IActionResult> GetArticleByBarcode(string barcode)
+        if (stockDelta != 0)
         {
-            if (string.IsNullOrWhiteSpace(barcode)) return BadRequest(new { error = "El código de barras no puede estar vacío." });
-
-            int companyId = ObtenerEmpresaSegura();
-            var articulo = await _articleService.GetArticleByBarcodeAsync(barcode);
-
-            if (articulo == null || articulo.CompanyId != companyId)
-                return NotFound(new { error = $"El código {barcode} no está registrado en tu sucursal." });
-
-            return Ok(articulo);
+            _db.Movements.Add(new Movement
+            {
+                ArticleId = id, CompanyId = companyId, MovementDate = DateTime.UtcNow,
+                ActionId = stockDelta > 0 ? 1 : 2, Amount = Math.Abs(stockDelta),
+                Observation = "Ajuste de stock desde edición de artículo"
+            });
         }
+        await _db.SaveChangesAsync();
+        await tx.CommitAsync();
+        return NoContent();
+    }
 
-        [HttpPost("AddDetail")]
-        public async Task<IActionResult> PostArticleDetail([FromBody] ArticleDetails detail)
-        {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> DeleteArticle(int id)
+    {
+        if (!TryCompany(out var companyId)) return Unauthorized();
+        var article = await _db.Articles.FirstOrDefaultAsync(a => a.Id == id && a.CompanyId == companyId);
+        if (article is null) return NotFound();
+        if (!await AccessibleInventories(companyId, ObtenerUsuarioSeguro(), true).ContainsAsync(article.InventoryId)) return Forbid();
+        if (!article.IsActive) return NoContent();
+        if (article.Stock != 0 || await _db.ArticleAssignments.AnyAsync(a => a.ArticleId == id && a.CompanyId == companyId && a.Quantity > a.ReturnedQuantity))
+            return Conflict(new { error = "Primero agota el stock y cierra las asignaciones pendientes." });
+        article.IsActive = false;
+        article.ModificationDate = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return NoContent();
+    }
 
-            int companyId = ObtenerEmpresaSegura();
-            var padre = await _articleService.GetByIdAsync(detail.ArticleId);
+    [HttpGet("count/inventory/{inventoryId:int}")]
+    public async Task<IActionResult> GetArticleCount(int inventoryId)
+    {
+        if (!TryCompany(out var companyId)) return Unauthorized();
+        if (!await AccessibleInventories(companyId, ObtenerUsuarioSeguro()).ContainsAsync(inventoryId)) return Forbid();
+        return Ok(await _db.Articles.Where(a => a.InventoryId == inventoryId && a.CompanyId == companyId && a.IsActive)
+            .SumAsync(a => a.Stock));
+    }
 
-            if (padre == null || padre.CompanyId != companyId)
-                return NotFound(new { error = "El artículo principal no existe o no pertenece a tu sucursal." });
+    [HttpGet("barcode/{barcode}")]
+    public async Task<IActionResult> GetArticleByBarcode(string barcode)
+    {
+        if (!TryCompany(out var companyId)) return Unauthorized();
+        var permitted = AccessibleInventories(companyId, ObtenerUsuarioSeguro());
+        var article = await _db.Articles.AsNoTracking().FirstOrDefaultAsync(a => a.CompanyId == companyId && permitted.Contains(a.InventoryId) && a.Barcode == barcode && a.IsActive);
+        return article == null ? NotFound() : Ok(article);
+    }
 
-            var (Success, ErrorMessage) = await _articleService.AddDetailAsync(detail);
-            if (!Success) return BadRequest(new { error = $"Error BD: {ErrorMessage}" });
+    [HttpPost("AddDetail")]
+    public async Task<IActionResult> PostArticleDetail([FromBody] ArticleDetails detail)
+    {
+        if (!TryCompany(out var companyId)) return Unauthorized();
+        var article = await _db.Articles.AsNoTracking().FirstOrDefaultAsync(a => a.Id == detail.ArticleId && a.CompanyId == companyId);
+        if (article is null) return NotFound();
+        if (!await AccessibleInventories(companyId, ObtenerUsuarioSeguro(), true).ContainsAsync(article.InventoryId)) return Forbid();
+        var result = await _service.AddDetailAsync(detail);
+        return result.Success ? Ok(new { newId = detail.Id }) : BadRequest(new { error = result.ErrorMessage });
+    }
 
-            return Ok(new { message = "Número de serie registrado correctamente.", newId = detail.Id });
-        }
+    [HttpPut("UpdateDetail/{id:int}")]
+    public async Task<IActionResult> UpdateDetail(int id, [FromBody] ArticleDetails detail)
+    {
+        if (!TryCompany(out var companyId)) return Unauthorized();
+        if (id != detail.Id || !await _db.Articles.AnyAsync(a => a.Id == detail.ArticleId && a.CompanyId == companyId && AccessibleInventories(companyId, ObtenerUsuarioSeguro(), true).Contains(a.InventoryId))) return BadRequest();
+        return await _service.UpdateDetailAsync(detail) ? NoContent() : BadRequest();
+    }
 
-        [HttpPut("UpdateDetail/{id}")]
-        public async Task<IActionResult> UpdateDetail(int id, [FromBody] ArticleDetails detail)
-        {
-            if (id != detail.Id) return BadRequest();
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            var success = await _articleService.UpdateDetailAsync(detail);
-            if (!success) return BadRequest(new { error = "No se pudo actualizar el número de serie." });
-
-            return Ok(new { message = "Serie actualizada correctamente." });
-        }
-
-        [HttpDelete("DeleteDetail/{id}")]
-        public async Task<IActionResult> DeleteDetail(int id)
-        {
-            var success = await _articleService.DeleteDetailAsync(id);
-            if (!success) return BadRequest(new { error = "No se pudo dar de baja la serie." });
-
-            return Ok(new { message = "Serie dada de baja correctamente." });
-        }
+    [HttpDelete("DeleteDetail/{id:int}")]
+    public async Task<IActionResult> DeleteDetail(int id)
+    {
+        if (!TryCompany(out var companyId)) return Unauthorized();
+        var detail = await _db.Set<ArticleDetails>().FirstOrDefaultAsync(x => x.Id == id);
+        if (detail == null || !await _db.Articles.AnyAsync(a => a.Id == detail.ArticleId && a.CompanyId == companyId && AccessibleInventories(companyId, ObtenerUsuarioSeguro(), true).Contains(a.InventoryId))) return NotFound();
+        return await _service.DeleteDetailAsync(id) ? NoContent() : BadRequest();
     }
 }

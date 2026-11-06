@@ -1,107 +1,65 @@
-﻿using ControlInventario.Shared.Models;
+using ControlInventario.Shared.Models;
 using ControlInventario.Shared.Models.DTO;
+using InventoryAPI.Data;
 using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
-using System.Diagnostics;
+using Microsoft.EntityFrameworkCore;
 
-namespace InventoryAPI.Services
+namespace InventoryAPI.Services;
+
+public class InventoryService(IWorkFlow workFlow, AppDbContext db)
+    : WorkContainer<Inventory>(workFlow), IInventoryService
 {
-    public class InventoryService(IWorkFlow workFlow) : WorkContainer<Inventory>(workFlow), IInventoryService
+    public async Task<(bool Success, string Message)> ShareInventoryAsync(ShareRequestDTO request)
     {
-        public async Task<(bool Success, string Message)> ShareInventoryAsync(ShareRequestDTO request)
+        if (request.InventoryId <= 0 || string.IsNullOrWhiteSpace(request.GuestIdentifier) ||
+            request.AccessLevel is not (SharedInventory.AccessMode.Lector or SharedInventory.AccessMode.Editor))
+            return (false, "Selecciona un inventario, destinatario y permiso válidos.");
+
+        var source = await db.Inventories.AsNoTracking()
+            .FirstOrDefaultAsync(i => i.Id == request.InventoryId && i.IsActive);
+        if (source == null) return (false, "Inventario inexistente o desactivado.");
+
+        string identifier = request.GuestIdentifier.Trim();
+        var recipient = await db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.IsActive && u.CompanyId == source.CompanyId &&
+                (u.Username == identifier || u.Email == identifier ||
+                 (u.Employee != null && u.Employee.DNI == identifier)));
+        if (recipient == null) return (false, "Destinatario no encontrado en la misma empresa.");
+        if (source.UserId == recipient.Id) return (false, "No puedes compartir tu inventario contigo mismo.");
+        if (await db.SharedInventories.AnyAsync(s => s.CompanyId == source.CompanyId &&
+                s.InventoryId == source.Id && s.UserId == recipient.Id))
+            return (false, "Este usuario ya tiene acceso al inventario.");
+
+        db.SharedInventories.Add(new SharedInventory
         {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(request.GuestIdentifier))
-                {
-                    return (false, "El identificador del invitado es inválido.");
-                }
-
-                // 1. CORRECCIÓN AQUÍ: Usamos FindAsync y luego FirstOrDefault
-                var guestUsers = await _workFlow.Repository<User>().FindAsync(u =>
-                    u.Username == request.GuestIdentifier ||
-                    u.Email == request.GuestIdentifier ||
-                    (u.Employee != null && u.Employee.DNI == request.GuestIdentifier));
-
-                var guestUser = guestUsers.FirstOrDefault();
-
-                if (guestUser == null)
-                {
-                    return (false, "El colaborador indicado no existe en el sistema.");
-                }
-
-                var existingShares = await _workFlow.Repository<SharedInventory>().FindAsync(s =>
-                    s.InventoryId == request.InventoryId && s.UserId == guestUser.Id);
-
-                var existingShare = existingShares.FirstOrDefault();
-
-                if (existingShare != null)
-                {
-                    return (false, "El inventario ya se encuentra compartido con este colaborador.");
-                }
-
-                var newShare = new SharedInventory
-                {
-                    InventoryId = request.InventoryId,
-                    UserId = guestUser.Id,
-                    AccessLevel = request.AccessLevel,
-                    SharedDate = DateTime.UtcNow
-                };
-
-                await _workFlow.Repository<SharedInventory>().AddAsync(newShare);
-                await _workFlow.CompleteAsync();
-
-                return (true, "Inventario compartido exitosamente.");
-            }
-            catch (Exception ex)
-            {
-                return (false, $"Error interno del servidor: {ex.Message}");
-            }
-        }
-
-        public async Task<IEnumerable<SharedInventory>> GetSharedInventoriesAsync(int inventoryId)
+            CompanyId = source.CompanyId, InventoryId = source.Id, UserId = recipient.Id,
+            AccessLevel = request.AccessLevel, SharedDate = DateTime.UtcNow
+        });
+        try
         {
-            try
-            {
-                var allShared = await _workFlow.Repository<SharedInventory>()
-                    .GetAllWithIncludeAsync(s => s.User!, s => s.User!.Employee!);
-
-                var sharedRecords = allShared.Where(s => s.InventoryId == inventoryId).ToList();
-
-                return sharedRecords;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error al listar compartidos: {ex.Message}");
-                return [];
-            }
+            await db.SaveChangesAsync();
+            return (true, "Inventario compartido con el usuario seleccionado.");
         }
-
-        public async Task<bool> RevokeAccessAsync(int sharedInventoryId)
+        catch (DbUpdateException)
         {
-            try
-            {
-                var sharedRecords = await _workFlow.Repository<SharedInventory>()
-                                                  .FindAsync(s => s.Id == sharedInventoryId);
-
-                var sharedRecord = sharedRecords.FirstOrDefault();
-
-                if (sharedRecord == null)
-                {
-                    return false;
-                }
-
-                _workFlow.Repository<SharedInventory>().Delete(sharedRecord);
-                await _workFlow.CompleteAsync();
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error al revocar acceso: {ex.Message}");
-                return false;
-            }
+            return (false, "No se pudo compartir: comprueba que el usuario no tenga ya acceso.");
         }
+    }
+
+    public async Task<IEnumerable<SharedInventory>> GetSharedInventoriesAsync(int inventoryId)
+    {
+        return await db.SharedInventories.AsNoTracking().Include(s => s.User)
+            .Where(s => s.InventoryId == inventoryId)
+            .OrderBy(s => s.UserId).ToListAsync();
+    }
+
+    public async Task<bool> RevokeAccessAsync(int sharedInventoryId)
+    {
+        var record = await db.SharedInventories.FindAsync(sharedInventoryId);
+        if (record == null) return false;
+        db.SharedInventories.Remove(record);
+        return await db.SaveChangesAsync() > 0;
     }
 }
