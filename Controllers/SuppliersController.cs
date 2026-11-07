@@ -14,13 +14,18 @@ namespace InventoryAPI.Controllers
         private bool CanManageMaster => User.FindFirst("RoleId")?.Value is "1" or "2";
         private Task<Inventory?> Master(int company) => db.Inventories
             .FirstOrDefaultAsync(i => i.CompanyId == company && i.IsMaster && i.IsActive);
-        private Task<bool> MayCreate(int company, int inventory) => db.Inventories.AnyAsync(i =>
-            i.CompanyId == company && i.IsActive && !i.IsMaster &&
-            (i.UserId == ObtenerUsuarioSeguro() || User.FindFirst("RoleId")!.Value == "1" ||
-             db.SharedInventories.Any(sh => sh.CompanyId == company &&
-                 sh.InventoryId == i.Id && sh.UserId == ObtenerUsuarioSeguro() &&
-                 sh.AccessLevel == SharedInventory.AccessMode.Editor)) &&
-            (inventory == i.Id || inventory == 0));
+        private Task<bool> MayCreate(int company, int inventory)
+        {
+            var userId = ObtenerUsuarioSeguro();
+            var developer = User.FindFirst("RoleId")?.Value == "1";
+            return db.Inventories.AnyAsync(i =>
+                i.CompanyId == company && i.IsActive && !i.IsMaster &&
+                (i.Id == inventory || inventory == 0) &&
+                (developer || i.UserId == userId ||
+                 db.SharedInventories.Any(sh => sh.CompanyId == company &&
+                    sh.InventoryId == i.Id && sh.UserId == userId &&
+                    sh.AccessLevel == SharedInventory.AccessMode.Editor)));
+        }
 
         [HttpGet("ruc/{ruc}")]
         public async Task<IActionResult> ConsultarRuc(string ruc)
