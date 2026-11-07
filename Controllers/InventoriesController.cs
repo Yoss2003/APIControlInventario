@@ -10,6 +10,7 @@ namespace InventoryAPI.Controllers;
 public class InventoriesController(IInventoryService inventoryService, AppDbContext db) : BaseApiController
 {
     private bool IsDeveloper => User.FindFirst("RoleId")?.Value == "1";
+    private bool CanManageMaster => User.FindFirst("RoleId")?.Value is "1" or "2";
     private readonly IInventoryService _service = inventoryService;
     private readonly AppDbContext _db = db;
 
@@ -19,10 +20,16 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
         return int.TryParse(User.FindFirst("CompanyId")?.Value, out companyId) &&
             userId > 0 && companyId > 0;
     }
-    private IQueryable<Inventory> Readable(int companyId, int userId) =>
-        _db.Inventories.AsNoTracking().Where(i => i.CompanyId == companyId &&
-            (IsDeveloper || i.UserId == userId || _db.SharedInventories.Any(s =>
-                s.InventoryId == i.Id && s.UserId == userId && s.CompanyId == companyId)));
+    private IQueryable<Inventory> Readable(int companyId, int userId)
+    {
+        bool canManageMaster = CanManageMaster;
+        bool isDeveloper = IsDeveloper;
+        return _db.Inventories.AsNoTracking().Where(i => i.CompanyId == companyId &&
+            ((i.IsMaster && canManageMaster) ||
+             (!i.IsMaster && (isDeveloper || i.UserId == userId ||
+                _db.SharedInventories.Any(s => s.InventoryId == i.Id &&
+                    s.UserId == userId && s.CompanyId == companyId)))));
+    }
 
     [HttpGet]
     public async Task<IActionResult> GetInventories()
@@ -44,7 +51,8 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
         if (!ModelState.IsValid || string.IsNullOrWhiteSpace(inventory.InventoryName)) return BadRequest(ModelState);
-        inventory.Id = 0; inventory.CompanyId = company; inventory.UserId = user;
+        // La ruta pública nunca permite crear otro inventario maestro.
+        inventory.Id = 0; inventory.CompanyId = company; inventory.UserId = user; inventory.IsMaster = false;
         inventory.CreationDate = DateTime.UtcNow; inventory.ModificationDate = DateTime.UtcNow;
         inventory.IsActive = true;
         inventory.Username = await _db.Users.Where(u => u.Id == user).Select(u => u.Username).FirstOrDefaultAsync() ?? string.Empty;
@@ -60,6 +68,7 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
         if (id != update.Id || !ModelState.IsValid) return BadRequest();
         var inventory = await _db.Inventories.FirstOrDefaultAsync(i => i.Id == id && i.CompanyId == company && (i.UserId == user || IsDeveloper));
         if (inventory == null) return NotFound();
+        if (inventory.IsMaster) return Conflict(new { error = "El inventario maestro es administrado exclusivamente por el sistema." });
         if (string.IsNullOrWhiteSpace(update.InventoryName)) return BadRequest(new { error = "El nombre del inventario es obligatorio." });
         inventory.InventoryName = update.InventoryName.Trim(); inventory.Alias = update.Alias?.Trim();
         inventory.ModificationDate = DateTime.UtcNow;
@@ -73,6 +82,7 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
         if (!TryScope(out var company, out var user)) return Unauthorized();
         var inventory = await _db.Inventories.FirstOrDefaultAsync(i => i.Id == id && i.CompanyId == company && (i.UserId == user || IsDeveloper));
         if (inventory == null) return NotFound();
+        if (inventory.IsMaster) return Conflict(new { error = "El inventario maestro es administrado exclusivamente por el sistema." });
         if (await _db.Articles.AnyAsync(a => a.InventoryId == id) ||
             await _db.Categories.AnyAsync(c => c.InventoryId == id) ||
             await _db.Brands.AnyAsync(b => b.InventoryId == id) ||
@@ -88,7 +98,7 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
     public async Task<IActionResult> ShareInventory([FromBody] ShareRequestDTO request)
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
-        if (!await _db.Inventories.AnyAsync(i => i.Id == request.InventoryId && i.CompanyId == company && (i.UserId == user || IsDeveloper)))
+        if (!await _db.Inventories.AnyAsync(i => i.Id == request.InventoryId && i.CompanyId == company && !i.IsMaster && (i.UserId == user || IsDeveloper)))
             return Forbid();
         var result = await _service.ShareInventoryAsync(request);
         return result.Success ? Ok(new { message = result.Message }) : BadRequest(new { error = result.Message });
@@ -98,7 +108,7 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
     public async Task<IActionResult> GetSharedInventories(int inventoryId)
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
-        if (!await _db.Inventories.AnyAsync(i => i.Id == inventoryId && i.CompanyId == company && (i.UserId == user || IsDeveloper)))
+        if (!await _db.Inventories.AnyAsync(i => i.Id == inventoryId && i.CompanyId == company && !i.IsMaster && (i.UserId == user || IsDeveloper)))
             return Forbid();
         var records = await _service.GetSharedInventoriesAsync(inventoryId);
         return Ok(records.Select(x => new { x.Id, x.InventoryId, x.UserId,
@@ -110,7 +120,7 @@ public class InventoriesController(IInventoryService inventoryService, AppDbCont
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
         var valid = await _db.SharedInventories.AnyAsync(s => s.Id == sharedInventoryId && s.CompanyId == company &&
-            _db.Inventories.Any(i => i.Id == s.InventoryId && i.CompanyId == company && (i.UserId == user || IsDeveloper)));
+            _db.Inventories.Any(i => i.Id == s.InventoryId && i.CompanyId == company && !i.IsMaster && (i.UserId == user || IsDeveloper)));
         if (!valid) return Forbid();
         return await _service.RevokeAccessAsync(sharedInventoryId)
             ? NoContent() : Conflict(new { error = "No se pudo revocar el permiso." });
