@@ -23,6 +23,7 @@ namespace InventoryAPI.Controllers
         public async Task<IActionResult> MasterHistory(
             [FromQuery] int? inventoryId = null,
             [FromQuery] int? userId = null,
+            [FromQuery] int? actorUserId = null,
             [FromQuery] int? actionId = null,
             [FromQuery(Name = "from")] DateTimeOffset? fromDate = null,
             [FromQuery(Name = "to")] DateTimeOffset? toDate = null,
@@ -57,8 +58,10 @@ namespace InventoryAPI.Controllers
                     movement.Observation,
                     InventoryId = inventory.Id,
                     InventoryName = inventory.Alias ?? inventory.InventoryName,
-                    UserId = inventory.UserId,
+                    UserId = inventory.UserId, // Propietario del inventario
                     Username = inventory.Username,
+                    ActorUserId = db.Employees.Where(e => e.Id == movement.EmployeeId &&
+                        e.CompanyId == companyId).Select(e => e.UserId).FirstOrDefault(),
                     ArticleId = article.Id,
                     ArticleName = article.Name,
                     ArticleCode = article.Code
@@ -66,6 +69,7 @@ namespace InventoryAPI.Controllers
 
             if (inventoryId.HasValue) rows = rows.Where(x => x.InventoryId == inventoryId.Value);
             if (userId.HasValue) rows = rows.Where(x => x.UserId == userId.Value);
+            if (actorUserId.HasValue) rows = rows.Where(x => x.ActorUserId == actorUserId.Value);
             if (actionId.HasValue) rows = rows.Where(x => x.ActionId == actionId.Value);
             if (fromDate.HasValue) rows = rows.Where(x => x.MovementDate >= fromDate.Value.UtcDateTime);
             if (toDate.HasValue) rows = rows.Where(x => x.MovementDate <= toDate.Value.UtcDateTime);
