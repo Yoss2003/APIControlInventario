@@ -9,11 +9,12 @@ public sealed class CompanyLicense
     public int Id { get; set; }
     public int CompanyId { get; set; }
 
-    // Los nuevos registros solo admiten Pro, Plus y Max.
+    // Los nuevos registros admiten Básico, Pro, Plus y Max.
     // Los planes históricos permanecen en la base de datos hasta su renovación.
     [MaxLength(40)]
-    public string Plan { get; set; } = "Pro";
+    public string Plan { get; set; } = "Básico";
 
+    // Básico: 5, Pro: 10, Plus: 15, Max: 0 (ilimitado).
     // Cupo contratado, distinto al número de usuarios actualmente registrados.
     public int MaxUsers { get; set; } = 5;
 

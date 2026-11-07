@@ -3,6 +3,7 @@ using InventoryAPI.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.Text.RegularExpressions;
@@ -34,16 +35,27 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
 
     public sealed record RenewLicenseInput([Required] string Plan, int? MaxUsers = null);
 
-    private static bool TryResolvePlan(string? value, out string plan, out int months)
+    // Los cupos son reglas del servidor, nunca valores editables desde Angular.
+    // MaxUsers = 0 representa usuarios ilimitados SOLO cuando Plan es Max.
+    private static bool TryResolvePlan(string? value, out string plan, out int months, out int maxUsers)
     {
         plan = (value ?? string.Empty).Trim().ToLowerInvariant() switch
         {
+            "basico" or "básico" or "basic" => "Básico",
             "pro" => "Pro",
             "plus" => "Plus",
             "max" => "Max",
             _ => string.Empty
         };
         months = plan == "Max" ? 3 : 1;
+        maxUsers = plan switch
+        {
+            "Básico" => 5,
+            "Pro" => 10,
+            "Plus" => 15,
+            "Max" => 0,
+            _ => -1
+        };
         return plan.Length > 0;
     }
 
@@ -53,8 +65,6 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
             return "Ingresa una razón social válida (máximo 255 caracteres).";
         if (!Regex.IsMatch(input.Ruc ?? "", @"^\d{11}$"))
             return "El RUC debe tener 11 dígitos.";
-        if (input.MaxUsers < 1)
-            return "El límite de usuarios debe ser mayor que cero.";
         if (!string.IsNullOrWhiteSpace(input.PrimaryColorHex) &&
             !Regex.IsMatch(input.PrimaryColorHex, @"^#[0-9a-fA-F]{6}$"))
             return "El color debe tener el formato #RRGGBB.";
@@ -102,8 +112,8 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
         if (!IsDeveloper()) return Forbid();
         var validation = ValidateCompanyInput(input, requireNewFields: true);
         if (validation is not null) return BadRequest(new { error = validation });
-        if (!TryResolvePlan(input.Plan, out var plan, out var months))
-            return BadRequest(new { error = "El plan debe ser Pro, Plus o Max." });
+        if (!TryResolvePlan(input.Plan, out var plan, out var months, out var maxUsers))
+            return BadRequest(new { error = "Selecciona un plan Básico, Pro, Plus o Max." });
         if (await db.Companies.AnyAsync(c => c.Ruc == input.Ruc))
             return Conflict(new { error = "Ya hay una empresa con este RUC." });
 
@@ -121,13 +131,21 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
             LogoUrl = input.LogoUrl
         };
         db.Companies.Add(company);
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg &&
+            pg.SqlState == PostgresErrorCodes.UniqueViolation && pg.ConstraintName == "PK_Companies")
+        {
+            return Conflict(new { error = "El generador de IDs de empresas parece desfasado. Un administrador debe revisar la secuencia de PostgreSQL antes de reintentar." });
+        }
 
         db.CompanyLicenses.Add(new CompanyLicense
         {
             CompanyId = company.Id,
             Plan = plan,
-            MaxUsers = input.MaxUsers,
+            MaxUsers = maxUsers,
             StartsAt = now,
             ExpiresAt = now.AddMonths(months),
             IsEnabled = input.LicenseEnabled,
@@ -162,14 +180,14 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
             {
                 // Compatibilidad: una empresa histórica sin licencia puede recibir
                 // su primera licencia sin alterar las demás empresas existentes.
-                if (!TryResolvePlan(input.Plan, out var newPlan, out var months))
-                    return BadRequest(new { error = "El plan debe ser Pro, Plus o Max." });
+                if (!TryResolvePlan(input.Plan, out var newPlan, out var months, out var maxUsers))
+                    return BadRequest(new { error = "Selecciona un plan Básico, Pro, Plus o Max." });
                 var now = DateTime.UtcNow;
                 license = new CompanyLicense
                 {
                     CompanyId = id,
                     Plan = newPlan,
-                    MaxUsers = input.MaxUsers,
+                    MaxUsers = maxUsers,
                     StartsAt = now,
                     ExpiresAt = now.AddMonths(months),
                     IsEnabled = input.LicenseEnabled,
@@ -183,13 +201,16 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
                 // por esta ruta: el cambio de plan exige renovación explícita.
                 if (!string.Equals(input.Plan?.Trim(), license.Plan, StringComparison.OrdinalIgnoreCase))
                     return Conflict(new { error = "Para cambiar de plan, utiliza la renovación de licencia." });
-                license.MaxUsers = input.MaxUsers;
+                // El cupo depende del plan y solo cambia al renovar, no al editar.
                 license.IsEnabled = input.LicenseEnabled;
                 license.UpdatedAt = DateTime.UtcNow;
             }
-            var activeUsers = await db.Users.CountAsync(u => u.CompanyId == id && u.IsActive);
-            if (input.MaxUsers < activeUsers)
-                return Conflict(new { error = "El límite no puede ser menor que la cantidad de usuarios activos." });
+            if (license is not null && license.MaxUsers > 0)
+            {
+                var activeUsers = await db.Users.CountAsync(u => u.CompanyId == id && u.IsActive);
+                if (license.MaxUsers < activeUsers)
+                    return Conflict(new { error = "El plan no admite los usuarios activos de esta empresa." });
+            }
         }
 
         company.BusinessName = input.BusinessName.Trim();
@@ -206,8 +227,8 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
     public async Task<IActionResult> RenewLicense(int id, [FromBody] RenewLicenseInput input)
     {
         if (!IsDeveloper()) return Forbid();
-        if (!TryResolvePlan(input.Plan, out var plan, out var months))
-            return BadRequest(new { error = "El plan debe ser Pro, Plus o Max." });
+        if (!TryResolvePlan(input.Plan, out var plan, out var months, out var maxUsers))
+            return BadRequest(new { error = "Selecciona un plan Básico, Pro, Plus o Max." });
 
         var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
         if (company is null) return NotFound();
@@ -219,9 +240,9 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
         var now = DateTime.UtcNow;
         var current = await db.CompanyLicenses.SingleOrDefaultAsync(l => l.CompanyId == id);
         var activeUsers = await db.Users.CountAsync(u => u.CompanyId == id && u.IsActive);
-        var newLimit = input.MaxUsers ?? current?.MaxUsers ?? 5;
-        if (newLimit < 1 || newLimit < activeUsers)
-            return Conflict(new { error = "El límite de usuarios no puede ser inferior a los usuarios activos." });
+        // No se acepta un cupo manual desde el frontend: se deriva del plan.
+        if (maxUsers > 0 && maxUsers < activeUsers)
+            return Conflict(new { error = $"El plan {plan} admite hasta {maxUsers} usuarios; la empresa tiene {activeUsers} activos." });
 
         // Si se renueva antes del vencimiento, se conserva el tiempo pagado.
         // Si ya venció, la nueva vigencia comienza ahora.
@@ -233,7 +254,7 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
         }
         current.StartsAt ??= now;
         current.Plan = plan;
-        current.MaxUsers = newLimit;
+        current.MaxUsers = maxUsers;
         current.ExpiresAt = baseDate.AddMonths(months);
         current.IsEnabled = true;
         current.UpdatedAt = now;
