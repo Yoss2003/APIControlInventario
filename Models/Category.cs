@@ -23,6 +23,9 @@ namespace InventoryAPI.Models
         public string Name { get; set; } = string.Empty;
 
         public string? Description { get; set; }
+        public string NameKey { get; set; } = string.Empty;
+        [NotMapped]
+        public bool Reused { get; set; }
 
         [Required]
         public bool IsReturnable { get; set; } = true;
