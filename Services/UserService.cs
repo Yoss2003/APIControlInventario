@@ -167,36 +167,27 @@ namespace InventoryAPI.Services
                 await _workFlow.Repository<User>().AddAsync(user);
                 await _workFlow.CompleteAsync();
 
-                bool esAltoNivel = user.RoleId == 1 || user.RoleId == 2;
+                // Todo usuario obtiene un inventario propio, con independencia del rol.
+                // No se borra su acceso adicional a inventarios compartidos.
+                var personal = InventoryProvisioner.NewPersonal(user);
+                await _workFlow.Repository<Inventory>().AddAsync(personal);
+                await _workFlow.CompleteAsync();
 
-                if (esAltoNivel)
+                if (user.AssignedInventoryId.HasValue && user.AssignedInventoryId.Value > 0)
                 {
-                    string fechaActual = DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss");
-                    string prefijoFecha = DateTime.UtcNow.ToString("ddMM");
+                    var permitted = await _workFlow.Repository<Inventory>().FindAsync(i =>
+                        i.Id == user.AssignedInventoryId.Value &&
+                        i.CompanyId == user.CompanyId && i.IsActive && !i.IsMaster);
+                    if (!permitted.Any())
+                        throw new InvalidOperationException("El inventario asignado no pertenece a la empresa o es un maestro.");
 
-                    var nuevoInventario = new Inventory
-                    {
-                        InventoryName = $"{user.Username}_Invent_{prefijoFecha}",
-                        CreationDate = DateTime.UtcNow,
-                        ModificationDate = DateTime.UtcNow,
-                        UserId = user.Id,
-                        Username = user.Username!,
-                        Alias = "Inventario Principal",
-                        CompanyId = user.Employee.CompanyId
-                    };
-
-                    await _workFlow.Repository<Inventory>().AddAsync(nuevoInventario);
-                    await _workFlow.CompleteAsync();
-                }
-                else if (user.AssignedInventoryId.HasValue && user.AssignedInventoryId.Value > 0)
-                {
                     var nuevoAcceso = new SharedInventory
                     {
                         InventoryId = user.AssignedInventoryId.Value,
                         UserId = user.Id,
                         AccessLevel = user.RoleId == 5 ? SharedInventory.AccessMode.Lector : SharedInventory.AccessMode.Editor,
                         SharedDate = DateTime.UtcNow,
-                        CompanyId = user.CompanyId ?? 1
+                        CompanyId = user.CompanyId!.Value
                     };
 
                     await _workFlow.Repository<SharedInventory>().AddAsync(nuevoAcceso);
