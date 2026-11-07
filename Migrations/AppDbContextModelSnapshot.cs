@@ -1799,6 +1799,10 @@ namespace InventoryAPI.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+                    b.HasIndex("CompanyId", "Ruc")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Suppliers_Company_Ruc")
+                        .HasFilter("\"IsActive\" = true");
 
                     b.ToTable("Suppliers");
                 });
