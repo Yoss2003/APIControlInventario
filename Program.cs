@@ -201,6 +201,10 @@ using (var scope = app.Services.CreateScope())
             }
             context.SaveChanges();
         }
+
+        // Idempotente: aprovisiona el maestro y el inventario personal
+        // para empresas/usuarios anteriores a la Fase 3.5 (incluido YosMG).
+        InventoryProvisioner.EnsureExistingAsync(context).GetAwaiter().GetResult();
     }
     catch (Exception ex)
     {
