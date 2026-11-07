@@ -1037,6 +1037,9 @@ namespace InventoryAPI.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsMaster")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime>("ModificationDate")
                         .HasColumnType("timestamp with time zone");
 
@@ -1048,6 +1051,11 @@ namespace InventoryAPI.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Inventories_CompanyId_Master")
+                        .HasFilter("\"IsMaster\" = true");
 
                     b.ToTable("Inventories");
                 });
