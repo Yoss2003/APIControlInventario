@@ -33,8 +33,9 @@ public sealed class CompanyLogosController(AppDbContext db) : ControllerBase
 
     [HttpPost("{companyId:int}")]
     [Authorize]
+    [Consumes("multipart/form-data")]
     [RequestSizeLimit(MaxBytes + 1024 * 128)]
-    public async Task<IActionResult> Upload(int companyId, [FromForm] IFormFile? file, CancellationToken ct)
+    public async Task<IActionResult> Upload(int companyId, IFormFile? file, CancellationToken ct)
     {
         if (User.FindFirst("RoleId")?.Value != "1" ||
             !int.TryParse(User.FindFirst("UserId")?.Value, out var uid) || uid <= 0)
