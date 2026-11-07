@@ -16,7 +16,7 @@ public class ArticlesController(IArticleService articleService, AppDbContext db)
 
     // No confundir custodia con permiso de lectura de un almacén.
     private IQueryable<int> AccessibleInventories(int companyId, int userId, bool edit = false) =>
-        _db.Inventories.Where(i => i.CompanyId == companyId &&
+        _db.Inventories.Where(i => i.CompanyId == companyId && !i.IsMaster &&
             (IsDeveloper || i.UserId == userId || _db.SharedInventories.Any(share =>
                 share.InventoryId == i.Id && share.UserId == userId && share.CompanyId == companyId &&
                 (!edit || share.AccessLevel == SharedInventory.AccessMode.Editor))))
@@ -45,8 +45,10 @@ public class ArticlesController(IArticleService articleService, AppDbContext db)
     {
         if (!await AccessibleInventories(companyId, ObtenerUsuarioSeguro(), true).ContainsAsync(article.InventoryId))
             return "No tienes permiso para modificar este almacén.";
-        if (!await _db.Categories.AnyAsync(c => c.Id == article.CategoryId && c.CompanyId == companyId && c.IsActive && c.InventoryId == article.InventoryId))
-            return "La categoría no pertenece al inventario o está inactiva.";
+        if (!await _db.Categories.AnyAsync(c => c.Id == article.CategoryId && c.CompanyId == companyId && c.IsActive &&
+            (c.InventoryId == article.InventoryId ||
+             _db.Inventories.Any(i => i.Id == c.InventoryId && i.CompanyId == companyId && i.IsMaster))))
+            return "La categoría no pertenece al catálogo de esta empresa o está inactiva.";
         if (article.BrandId.HasValue && !await _db.Brands.AnyAsync(b => b.Id == article.BrandId && b.CompanyId == companyId && b.CategoryId == article.CategoryId && b.IsActive))
             return "La marca no pertenece a esta categoría.";
         if (string.IsNullOrWhiteSpace(article.Code) || string.IsNullOrWhiteSpace(article.Name))
