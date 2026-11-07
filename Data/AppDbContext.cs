@@ -69,6 +69,11 @@ namespace InventoryAPI.Data
                     .HasDatabaseName("IX_Categories_MasterChild_NameKey")
                     .HasFilter("\"ParentCategoryId\" IS NOT NULL AND \"IsActive\" = true");
             });
+            modelBuilder.Entity<Supplier>(e => {
+                e.HasIndex(x => new { x.CompanyId, x.Ruc }).IsUnique()
+                    .HasDatabaseName("IX_Suppliers_Company_Ruc")
+                    .HasFilter("\"IsActive\" = true");
+            });
             modelBuilder.Entity<Brand>(e => {
                 e.HasIndex(x => new { x.CompanyId, x.CategoryId, x.NameKey }).IsUnique()
                     .HasDatabaseName("IX_Brands_Company_Category_NameKey")
