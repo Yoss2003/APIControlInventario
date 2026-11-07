@@ -262,6 +262,27 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
         return Ok(new { current.Plan, current.MaxUsers, current.StartsAt, current.ExpiresAt, current.IsEnabled });
     }
 
+    // Activa de nuevo una empresa existente. No crea ni renueva su licencia.
+    [HttpPost("companies/{id:int}/reactivate")]
+    public async Task<IActionResult> Reactivate(int id)
+    {
+        if (!IsDeveloper()) return Forbid();
+
+        var company = await db.Companies.FindAsync(id);
+        if (company is null) return NotFound(new { error = "La empresa no existe." });
+        if (await HasDeveloperUserAsync(id))
+            return Conflict(new { error = "La empresa administradora está protegida." });
+        if (company.IsActive)
+            return Conflict(new { error = "La empresa ya está activa." });
+
+        company.IsActive = true;
+        company.DeletionDate = null;
+        company.DeletionUser = null;
+        // No modificar CompanyLicenses: vencimiento, plan, cupo y habilitación permanecen intactos.
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
     [HttpDelete("companies/{id:int}")]
     public async Task<IActionResult> Deactivate(int id)
     {
