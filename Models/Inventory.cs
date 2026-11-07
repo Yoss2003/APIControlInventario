@@ -23,6 +23,9 @@ namespace InventoryAPI.Models
 
         public string? Alias { get; set; }
         public bool IsActive { get; set; } = true;
+
+        // Inventario único de catálogos y reglas de la empresa; no almacena stock.
+        public bool IsMaster { get; set; } = false;
         public int CompanyId { get; set; }
     }
 }
