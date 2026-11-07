@@ -128,6 +128,7 @@ namespace InventoryAPI.Services
             user.Employee.StatusId = 2;
             user.Role = null;
             user.Employee.CompanyId = user.CompanyId ?? 1;
+            user.CompanyId = user.Employee.CompanyId;
 
             // 1. GUARDAMOS LA CLAVE PLANA PARA EL CORREO
             string clavePlana = user.Password!;
