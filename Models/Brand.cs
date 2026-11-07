@@ -18,6 +18,9 @@ namespace InventoryAPI.Models
         [Required]
         [StringLength(255)]
         public string Name { get; set; } = string.Empty;
+        public string NameKey { get; set; } = string.Empty;
+        [NotMapped]
+        public bool Reused { get; set; }
         public bool IsActive { get; set; } = true;
         public int CompanyId { get; set; }
     }
