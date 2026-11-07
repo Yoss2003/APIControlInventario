@@ -25,6 +25,10 @@ namespace InventoryAPI.Controllers
         [HttpGet("ruc/{ruc}")]
         public async Task<IActionResult> ConsultarRuc(string ruc)
         {
+            int company = ObtenerEmpresaSegura();
+            var cached = await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(s =>
+                s.CompanyId == company && s.Ruc == ruc && s.IsActive);
+            if (cached != null) return Ok(cached);
             var result = await _supplierService.ConsultarRucAsync(ruc);
             if (!result.Success)
             {
@@ -130,8 +134,9 @@ namespace InventoryAPI.Controllers
             if (!CanManageMaster) return Forbid();
             int company = ObtenerEmpresaSegura();
             var master = await Master(company);
+            if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
             var supplier = await db.Suppliers.FirstOrDefaultAsync(s =>
-                s.Id == id && s.CompanyId == company && s.InventoryId == master!.Id);
+                s.Id == id && s.CompanyId == company && s.InventoryId == master.Id);
             if (supplier is null) return NotFound();
             if (await db.Articles.AnyAsync(a => a.CompanyId == company && a.SupplierId == id))
                 return Conflict(new { error = "El proveedor se utiliza en artículos y no se puede desactivar." });
