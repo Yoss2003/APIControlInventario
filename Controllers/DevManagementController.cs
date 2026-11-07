@@ -3,7 +3,9 @@ using InventoryAPI.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
 using System.ComponentModel.DataAnnotations;
+using System.Text.RegularExpressions;
 
 namespace InventoryAPI.Controllers;
 
@@ -15,11 +17,66 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
     private bool IsDeveloper() => User.FindFirst("RoleId")?.Value == "1" &&
         int.TryParse(User.FindFirst("UserId")?.Value, out var uid) && uid > 0;
 
+    // Se conservan ExpiresAt y las propiedades existentes de manera temporal
+    // para no cambiar el contrato de Angular hasta la fase 2.2.
+    // IMPORTANTE: ExpiresAt entrante nunca determina el vencimiento.
     public sealed record CompanyInput(
         [Required, MaxLength(255)] string BusinessName,
         [Required, RegularExpression(@"^\d{11}$")] string Ruc,
-        string Plan, int MaxUsers, DateTime ExpiresAt, bool LicenseEnabled,
-        string? PrimaryColorHex, string? LogoUrl);
+        string Plan,
+        int MaxUsers,
+        DateTime? ExpiresAt,
+        bool LicenseEnabled,
+        string? PrimaryColorHex,
+        string? LogoUrl,
+        string? FiscalOwnerName = null,
+        string? ContactEmail = null);
+
+    public sealed record RenewLicenseInput([Required] string Plan, int? MaxUsers = null);
+
+    private static bool TryResolvePlan(string? value, out string plan, out int months)
+    {
+        plan = (value ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "pro" => "Pro",
+            "plus" => "Plus",
+            "max" => "Max",
+            _ => string.Empty
+        };
+        months = plan == "Max" ? 3 : 1;
+        return plan.Length > 0;
+    }
+
+    private static string? ValidateCompanyInput(CompanyInput input, bool requireNewFields)
+    {
+        if (string.IsNullOrWhiteSpace(input.BusinessName) || input.BusinessName.Trim().Length > 255)
+            return "Ingresa una razón social válida (máximo 255 caracteres).";
+        if (!Regex.IsMatch(input.Ruc ?? "", @"^\d{11}$"))
+            return "El RUC debe tener 11 dígitos.";
+        if (input.MaxUsers < 1)
+            return "El límite de usuarios debe ser mayor que cero.";
+        if (!string.IsNullOrWhiteSpace(input.PrimaryColorHex) &&
+            !Regex.IsMatch(input.PrimaryColorHex, @"^#[0-9a-fA-F]{6}$"))
+            return "El color debe tener el formato #RRGGBB.";
+
+        // En altas se exigen ambos campos. En ediciones se permite omitirlos
+        // para preservar la compatibilidad con registros y pantallas anteriores.
+        if (requireNewFields || input.FiscalOwnerName is not null)
+        {
+            if (string.IsNullOrWhiteSpace(input.FiscalOwnerName) || input.FiscalOwnerName.Trim().Length > 255)
+                return "Ingresa el nombre del dueño fiscal (máximo 255 caracteres).";
+        }
+        if (requireNewFields || input.ContactEmail is not null)
+        {
+            var email = input.ContactEmail?.Trim() ?? "";
+            if (email.Length == 0 || email.Length > 254 || !new EmailAddressAttribute().IsValid(email))
+                return "Ingresa un correo de contacto válido.";
+        }
+        return null;
+    }
+
+    private Task<bool> HasDeveloperUserAsync(int companyId) =>
+        db.Users.AnyAsync(u => u.CompanyId == companyId && u.RoleId == 1);
 
     [HttpGet("companies")]
     public async Task<IActionResult> List()
@@ -28,12 +85,13 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
         var companies = await db.Companies.AsNoTracking().OrderBy(x => x.BusinessName)
             .Select(c => new
             {
-                c.Id, c.BusinessName, c.Ruc, c.IsActive, c.LogoUrl, c.PrimaryColorHex,
+                c.Id, c.BusinessName, c.Ruc, c.FiscalOwnerName, c.ContactEmail,
+                c.IsActive, c.LogoUrl, c.PrimaryColorHex,
                 userCount = db.Users.Count(u => u.CompanyId == c.Id && u.IsActive),
                 totalUsers = db.Users.Count(u => u.CompanyId == c.Id),
                 inventoryCount = db.Inventories.Count(i => i.CompanyId == c.Id),
                 license = db.CompanyLicenses.Where(l => l.CompanyId == c.Id).Select(l => new
-                { l.Plan, l.MaxUsers, l.ExpiresAt, l.IsEnabled }).FirstOrDefault()
+                { l.Plan, l.MaxUsers, l.StartsAt, l.ExpiresAt, l.IsEnabled }).FirstOrDefault()
             }).ToListAsync();
         return Ok(companies);
     }
@@ -42,19 +100,41 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
     public async Task<IActionResult> Create([FromBody] CompanyInput input)
     {
         if (!IsDeveloper()) return Forbid();
-        if (!ModelState.IsValid || input.MaxUsers <= 0 || input.ExpiresAt <= DateTime.UtcNow ||
-            string.IsNullOrWhiteSpace(input.BusinessName)) return BadRequest(new { error = "Datos de empresa o licencia inválidos." });
+        var validation = ValidateCompanyInput(input, requireNewFields: true);
+        if (validation is not null) return BadRequest(new { error = validation });
+        if (!TryResolvePlan(input.Plan, out var plan, out var months))
+            return BadRequest(new { error = "El plan debe ser Pro, Plus o Max." });
         if (await db.Companies.AnyAsync(c => c.Ruc == input.Ruc))
             return Conflict(new { error = "Ya hay una empresa con este RUC." });
+
+        var now = DateTime.UtcNow;
         await using var tx = await db.Database.BeginTransactionAsync();
-        var company = new Company { BusinessName = input.BusinessName.Trim(), Ruc = input.Ruc,
-            IsActive = true, RegistrationDate = DateTime.UtcNow,
-            PrimaryColorHex = input.PrimaryColorHex, LogoUrl = input.LogoUrl };
-        db.Companies.Add(company); await db.SaveChangesAsync();
-        db.CompanyLicenses.Add(new CompanyLicense { CompanyId = company.Id, Plan = input.Plan.Trim(),
-            MaxUsers = input.MaxUsers, ExpiresAt = input.ExpiresAt.ToUniversalTime(),
-            IsEnabled = input.LicenseEnabled, UpdatedAt = DateTime.UtcNow });
-        await db.SaveChangesAsync(); await tx.CommitAsync();
+        var company = new Company
+        {
+            BusinessName = input.BusinessName.Trim(),
+            Ruc = input.Ruc,
+            FiscalOwnerName = input.FiscalOwnerName!.Trim(),
+            ContactEmail = input.ContactEmail!.Trim(),
+            IsActive = true,
+            RegistrationDate = now,
+            PrimaryColorHex = input.PrimaryColorHex?.Trim(),
+            LogoUrl = input.LogoUrl
+        };
+        db.Companies.Add(company);
+        await db.SaveChangesAsync();
+
+        db.CompanyLicenses.Add(new CompanyLicense
+        {
+            CompanyId = company.Id,
+            Plan = plan,
+            MaxUsers = input.MaxUsers,
+            StartsAt = now,
+            ExpiresAt = now.AddMonths(months),
+            IsEnabled = input.LicenseEnabled,
+            UpdatedAt = now
+        });
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
         return Ok(new { company.Id });
     }
 
@@ -62,22 +142,103 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
     public async Task<IActionResult> Update(int id, [FromBody] CompanyInput input)
     {
         if (!IsDeveloper()) return Forbid();
-        if (!ModelState.IsValid || input.MaxUsers <= 0 || string.IsNullOrWhiteSpace(input.BusinessName))
-            return BadRequest(new { error = "Datos inválidos." });
+        var validation = ValidateCompanyInput(input, requireNewFields: false);
+        if (validation is not null) return BadRequest(new { error = validation });
+
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
         if (await db.Companies.AnyAsync(c => c.Ruc == input.Ruc && c.Id != id))
             return Conflict(new { error = "RUC utilizado por otra empresa." });
-        var users = await db.Users.CountAsync(u => u.CompanyId == id && u.IsActive);
-        if (input.MaxUsers < users) return Conflict(new { error = "El límite de usuarios no puede ser inferior a los usuarios activos." });
-        company.BusinessName = input.BusinessName.Trim(); company.Ruc = input.Ruc;
-        company.PrimaryColorHex = input.PrimaryColorHex; company.LogoUrl = input.LogoUrl;
+
+        var central = await HasDeveloperUserAsync(id);
+        if (central && company.Ruc != input.Ruc)
+            return Conflict(new { error = "No se puede cambiar el RUC de la empresa que administra el sistema." });
+
+        // La edición normal NO renueva licencias ni acepta una fecha calculada por Angular.
         var license = await db.CompanyLicenses.SingleOrDefaultAsync(l => l.CompanyId == id);
-        if (license is null) { license = new CompanyLicense { CompanyId = id }; db.CompanyLicenses.Add(license); }
-        license.Plan = input.Plan.Trim(); license.MaxUsers = input.MaxUsers;
-        license.ExpiresAt = input.ExpiresAt.ToUniversalTime(); license.IsEnabled = input.LicenseEnabled;
-        license.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(); return NoContent();
+        if (!central)
+        {
+            if (license is null)
+            {
+                // Compatibilidad: una empresa histórica sin licencia puede recibir
+                // su primera licencia sin alterar las demás empresas existentes.
+                if (!TryResolvePlan(input.Plan, out var newPlan, out var months))
+                    return BadRequest(new { error = "El plan debe ser Pro, Plus o Max." });
+                var now = DateTime.UtcNow;
+                license = new CompanyLicense
+                {
+                    CompanyId = id,
+                    Plan = newPlan,
+                    MaxUsers = input.MaxUsers,
+                    StartsAt = now,
+                    ExpiresAt = now.AddMonths(months),
+                    IsEnabled = input.LicenseEnabled,
+                    UpdatedAt = now
+                };
+                db.CompanyLicenses.Add(license);
+            }
+            else
+            {
+                // Conserva planes históricos en edición, pero no permite cambiarlos
+                // por esta ruta: el cambio de plan exige renovación explícita.
+                if (!string.Equals(input.Plan?.Trim(), license.Plan, StringComparison.OrdinalIgnoreCase))
+                    return Conflict(new { error = "Para cambiar de plan, utiliza la renovación de licencia." });
+                license.MaxUsers = input.MaxUsers;
+                license.IsEnabled = input.LicenseEnabled;
+                license.UpdatedAt = DateTime.UtcNow;
+            }
+            var activeUsers = await db.Users.CountAsync(u => u.CompanyId == id && u.IsActive);
+            if (input.MaxUsers < activeUsers)
+                return Conflict(new { error = "El límite no puede ser menor que la cantidad de usuarios activos." });
+        }
+
+        company.BusinessName = input.BusinessName.Trim();
+        company.Ruc = input.Ruc;
+        if (input.FiscalOwnerName is not null) company.FiscalOwnerName = input.FiscalOwnerName.Trim();
+        if (input.ContactEmail is not null) company.ContactEmail = input.ContactEmail.Trim();
+        company.PrimaryColorHex = input.PrimaryColorHex?.Trim();
+        company.LogoUrl = input.LogoUrl;
+        await db.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpPost("companies/{id:int}/renew-license")]
+    public async Task<IActionResult> RenewLicense(int id, [FromBody] RenewLicenseInput input)
+    {
+        if (!IsDeveloper()) return Forbid();
+        if (!TryResolvePlan(input.Plan, out var plan, out var months))
+            return BadRequest(new { error = "El plan debe ser Pro, Plus o Max." });
+
+        var company = await db.Companies.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id);
+        if (company is null) return NotFound();
+        if (!company.IsActive)
+            return Conflict(new { error = "No se puede renovar una empresa inactiva." });
+        if (await HasDeveloperUserAsync(id))
+            return Conflict(new { error = "La licencia de Administración Central no se modifica desde esta operación." });
+
+        var now = DateTime.UtcNow;
+        var current = await db.CompanyLicenses.SingleOrDefaultAsync(l => l.CompanyId == id);
+        var activeUsers = await db.Users.CountAsync(u => u.CompanyId == id && u.IsActive);
+        var newLimit = input.MaxUsers ?? current?.MaxUsers ?? 5;
+        if (newLimit < 1 || newLimit < activeUsers)
+            return Conflict(new { error = "El límite de usuarios no puede ser inferior a los usuarios activos." });
+
+        // Si se renueva antes del vencimiento, se conserva el tiempo pagado.
+        // Si ya venció, la nueva vigencia comienza ahora.
+        var baseDate = current is not null && current.ExpiresAt > now ? current.ExpiresAt : now;
+        if (current is null)
+        {
+            current = new CompanyLicense { CompanyId = id, StartsAt = now };
+            db.CompanyLicenses.Add(current);
+        }
+        current.StartsAt ??= now;
+        current.Plan = plan;
+        current.MaxUsers = newLimit;
+        current.ExpiresAt = baseDate.AddMonths(months);
+        current.IsEnabled = true;
+        current.UpdatedAt = now;
+        await db.SaveChangesAsync();
+        return Ok(new { current.Plan, current.MaxUsers, current.StartsAt, current.ExpiresAt, current.IsEnabled });
     }
 
     [HttpDelete("companies/{id:int}")]
@@ -86,6 +247,8 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
         if (!IsDeveloper()) return Forbid();
         var company = await db.Companies.FindAsync(id);
         if (company is null) return NotFound();
+        if (await HasDeveloperUserAsync(id))
+            return Conflict(new { error = "No se puede desactivar la empresa administradora." });
         // Nunca borrar en cascada. Se bloquea la baja si está referenciada.
         if (await db.Users.AnyAsync(u => u.CompanyId == id) ||
             await db.Inventories.AnyAsync(i => i.CompanyId == id) ||
@@ -93,8 +256,10 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
             await db.Articles.AnyAsync(a => a.CompanyId == id) ||
             await db.Movements.AnyAsync(m => m.CompanyId == id))
             return Conflict(new { error = "La empresa tiene usuarios, inventarios u operaciones. Suspende su licencia si deseas bloquear el acceso." });
-        company.IsActive = false; company.DeletionDate = DateTime.UtcNow;
+        company.IsActive = false;
+        company.DeletionDate = DateTime.UtcNow;
         company.DeletionUser = User.FindFirst("UserId")?.Value;
-        await db.SaveChangesAsync(); return NoContent();
+        await db.SaveChangesAsync();
+        return NoContent();
     }
 }

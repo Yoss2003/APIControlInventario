@@ -49,6 +49,7 @@ namespace InventoryAPI.Data
         public DbSet<MovementCancellation> MovementCancellations { get; set; }
         public DbSet<SaleOperation> SaleOperations { get; set; }
         public DbSet<SaleCancellation> SaleCancellations { get; set; }
+        public DbSet<CompanyLogo> CompanyLogos { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -94,6 +95,15 @@ namespace InventoryAPI.Data
                 e.HasOne(x => x.Assignment).WithMany(x => x.Events)
                     .HasForeignKey(x => x.AssignmentId).OnDelete(DeleteBehavior.Restrict);
             });
+            modelBuilder.Entity<CompanyLogo>(e => {
+                e.HasKey(x => x.CompanyId);
+                e.Property(x => x.ContentType).HasMaxLength(32).IsRequired();
+                e.Property(x => x.Content).IsRequired();
+                e.HasOne<Company>().WithOne()
+                    .HasForeignKey<CompanyLogo>(x => x.CompanyId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
         }
     }
 }

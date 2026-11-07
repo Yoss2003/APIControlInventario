@@ -610,11 +610,19 @@ namespace InventoryAPI.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("character varying(254)");
+
                     b.Property<DateTime?>("DeletionDate")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("DeletionUser")
                         .HasColumnType("text");
+
+                    b.Property<string>("FiscalOwnerName")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -662,6 +670,9 @@ namespace InventoryAPI.Migrations
                         .HasMaxLength(40)
                         .HasColumnType("character varying(40)");
 
+                    b.Property<DateTime?>("StartsAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -671,6 +682,28 @@ namespace InventoryAPI.Migrations
                         .IsUnique();
 
                     b.ToTable("CompanyLicenses");
+                });
+
+            modelBuilder.Entity("InventoryAPI.Models.CompanyLogo", b =>
+                {
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("integer");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("CompanyId");
+
+                    b.ToTable("CompanyLogos");
                 });
 
             modelBuilder.Entity("InventoryAPI.Models.Currency", b =>
@@ -1898,6 +1931,15 @@ namespace InventoryAPI.Migrations
                     b.HasOne("InventoryAPI.Models.Company", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("InventoryAPI.Models.CompanyLogo", b =>
+                {
+                    b.HasOne("InventoryAPI.Models.Company", null)
+                        .WithOne()
+                        .HasForeignKey("InventoryAPI.Models.CompanyLogo", "CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
