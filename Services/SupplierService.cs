@@ -17,13 +17,8 @@ namespace InventoryAPI.Services
 
             try
             {
-                var localMatch = await _workFlow.Repository<Supplier>().FindAsync(s => s.Ruc == ruc);
-                var proveedorExistente = localMatch.FirstOrDefault();
-
-                if (proveedorExistente != null)
-                {
-                    return (true, proveedorExistente, "Encontrado en caché local.");
-                }
+                // La caché se consulta desde el controller con CompanyId del JWT.
+                // No reutilizar proveedores de otras empresas por coincidencia de RUC.
 
                 var parametroToken = await _workFlow.Repository<Parameters>()
                     .FindAsync(p => p.ParameterType == "API_KEY" && p.Name == "Decolecta_Token");
