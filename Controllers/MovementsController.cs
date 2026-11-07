@@ -24,8 +24,8 @@ namespace InventoryAPI.Controllers
             [FromQuery] int? inventoryId = null,
             [FromQuery] int? userId = null,
             [FromQuery] int? actionId = null,
-            [FromQuery] DateTime? from = null,
-            [FromQuery] DateTime? to = null,
+            [FromQuery(Name = "from")] DateTimeOffset? fromDate = null,
+            [FromQuery(Name = "to")] DateTimeOffset? toDate = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 50)
         {
@@ -34,10 +34,10 @@ namespace InventoryAPI.Controllers
             if (companyId <= 0) return Unauthorized();
             if (actionId.HasValue && actionId.Value is not (1 or 2))
                 return BadRequest(new { error = "Tipo válido: 1 entrada, 2 salida." });
-            if (from.HasValue && to.HasValue && from > to)
+            if (fromDate.HasValue && toDate.HasValue && fromDate > toDate)
                 return BadRequest(new { error = "El rango de fechas no es válido." });
 
-            page = Math.Max(1, page);
+            page = Math.Clamp(page, 1, 1000000);
             pageSize = Math.Clamp(pageSize, 1, 100);
 
             var rows =
@@ -67,8 +67,8 @@ namespace InventoryAPI.Controllers
             if (inventoryId.HasValue) rows = rows.Where(x => x.InventoryId == inventoryId.Value);
             if (userId.HasValue) rows = rows.Where(x => x.UserId == userId.Value);
             if (actionId.HasValue) rows = rows.Where(x => x.ActionId == actionId.Value);
-            if (from.HasValue) rows = rows.Where(x => x.MovementDate >= from.Value);
-            if (to.HasValue) rows = rows.Where(x => x.MovementDate <= to.Value);
+            if (fromDate.HasValue) rows = rows.Where(x => x.MovementDate >= fromDate.Value.UtcDateTime);
+            if (toDate.HasValue) rows = rows.Where(x => x.MovementDate <= toDate.Value.UtcDateTime);
 
             var total = await rows.CountAsync();
             var items = await rows.OrderByDescending(x => x.MovementDate)
