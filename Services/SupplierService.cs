@@ -3,6 +3,8 @@ using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
 using System.Text.Json;
+using System.Net;
+using System.Net.Http.Headers;
 using InventoryAPI.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -40,51 +42,99 @@ namespace InventoryAPI.Services
                     return (false, null, "El servicio de SUNAT está inactivo. El administrador debe configurar el Token desde la App.");
                 }
 
-                // 3. CONSULTA A DECOLECTA CON EL TOKEN DINÁMICO
-                string url = $"https://api.decolecta.com/v1/sunat/ruc?numero={ruc}";
-
-                using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
-                request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-
-                using var response = await httpClient.SendAsync(request);
-                string jsonString = await response.Content.ReadAsStringAsync();
-
-                if (response.IsSuccessStatusCode)
+                // Consulta avanzada como opción principal. Si el plan no permite
+                // /full, se mantiene disponible la consulta básica ya funcional.
+                static string? Field(JsonElement obj, string key)
                 {
-                    using var doc = JsonDocument.Parse(jsonString);
-                    var root = doc.RootElement;
+                    if (!obj.TryGetProperty(key, out var val)) return null;
+                    var value = val.ValueKind switch
+                    {
+                        JsonValueKind.String => val.GetString()?.Trim(),
+                        JsonValueKind.Number => val.GetRawText(),
+                        _ => null
+                    };
+                    return string.IsNullOrWhiteSpace(value) || value == "-" ? null : value;
+                }
 
-                    var nuevoProveedor = new Supplier
+                async Task<HttpResponseMessage> RequestAsync(string path)
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Get,
+                        $"https://api.decolecta.com/v1/sunat/{path}?numero={ruc}");
+                    req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiToken.Trim());
+                    req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                    return await httpClient.SendAsync(req);
+                }
+
+                using var advancedResponse = await RequestAsync("ruc/full");
+                var advancedAvailable = advancedResponse.IsSuccessStatusCode;
+                HttpResponseMessage? basicResponse = null;
+                HttpResponseMessage finalResponse = advancedResponse;
+                try
+                {
+                    if (!advancedAvailable &&
+                        advancedResponse.StatusCode is HttpStatusCode.BadRequest
+                            or HttpStatusCode.Forbidden or HttpStatusCode.NotFound
+                            or HttpStatusCode.UnprocessableEntity)
+                    {
+                        basicResponse = await RequestAsync("ruc");
+                        finalResponse = basicResponse;
+                    }
+
+                    var json = await finalResponse.Content.ReadAsStringAsync();
+                    if (!finalResponse.IsSuccessStatusCode)
+                    {
+                        var detail = "Consulta no autorizada o servicio no disponible.";
+                        try
+                        {
+                            using var errorJson = JsonDocument.Parse(json);
+                            if (errorJson.RootElement.ValueKind == JsonValueKind.Object)
+                                detail = Field(errorJson.RootElement, "message") ??
+                                    Field(errorJson.RootElement, "error") ?? detail;
+                        }
+                        catch (JsonException) { /* Error externo sin estructura JSON. */ }
+                        return (false, null,
+                            $"Decolecta rechazó la consulta ({(int)finalResponse.StatusCode}): {detail}");
+                    }
+
+                    using var doc = JsonDocument.Parse(json);
+                    var root = doc.RootElement;
+                    if (root.ValueKind != JsonValueKind.Object)
+                        return (false, null, "La consulta SUNAT devolvió una respuesta inválida.");
+
+                    var businessName = Field(root, "razon_social");
+                    if (string.IsNullOrWhiteSpace(businessName))
+                        return (false, null, "SUNAT no devolvió una razón social válida para ese RUC.");
+
+                    // Los datos fiscales que ya existen en la BD se pueden guardar.
+                    // Los nuevos campos avanzados son [NotMapped] y solo informativos.
+                    var supplier = new Supplier
                     {
                         InventoryId = 0,
                         Ruc = ruc,
-                        BusinessName = root.TryGetProperty("razon_social", out var rz) ? rz.GetString() ?? "SIN NOMBRE" : "SIN NOMBRE",
-                        Address = root.TryGetProperty("direccion", out var dir) ? dir.GetString() ?? "Sin dirección" : "Sin dirección",
+                        BusinessName = businessName,
+                        Address = Field(root, "direccion"),
                         StatusId = 1,
-                        Estado = root.TryGetProperty("estado", out var est) ? est.GetString() ?? "ACTIVO" : "ACTIVO",
-                        Condicion = root.TryGetProperty("condicion", out var cond) ? cond.GetString() ?? "HABIDO" : "HABIDO",
-                        Distrito = root.TryGetProperty("distrito", out var dist) ? dist.GetString() ?? "" : "",
-                        Provincia = root.TryGetProperty("provincia", out var prov) ? prov.GetString() ?? "" : "",
-                        Departamento = root.TryGetProperty("departamento", out var dep) ? dep.GetString() ?? "" : ""
+                        Estado = Field(root, "estado"),
+                        Condicion = Field(root, "condicion"),
+                        Distrito = Field(root, "distrito"),
+                        Provincia = Field(root, "provincia"),
+                        Departamento = Field(root, "departamento"),
+                        AdvancedDataAvailable = advancedAvailable,
+                        Ubigeo = Field(root, "ubigeo"),
+                        TipoContribuyente = Field(root, "tipo"),
+                        ActividadEconomica = Field(root, "actividad_economica"),
+                        NumeroTrabajadores = Field(root, "numero_trabajadores"),
+                        TipoFacturacion = Field(root, "tipo_facturacion"),
+                        TipoContabilidad = Field(root, "tipo_contabilidad"),
+                        ComercioExterior = Field(root, "comercio_exterior")
                     };
-
-                    return (true, nuevoProveedor, "RUC localizado y guardado.");
+                    return (true, supplier,
+                        advancedAvailable ? "Consulta RUC avanzada completada." :
+                            "Consulta RUC básica completada; los datos avanzados no están disponibles con esta credencial.");
                 }
-                else
+                finally
                 {
-                    string errorDetalle = "Desconocido";
-                    try
-                    {
-                        using var errDoc = JsonDocument.Parse(jsonString);
-                        if (errDoc.RootElement.TryGetProperty("message", out var msg))
-                        {
-                            errorDetalle = msg.GetString() ?? "Sin mensaje";
-                        }
-                    }
-                    catch { errorDetalle = "Error de conexión."; }
-
-                    return (false, null, $"Decolecta rechazó la consulta ({(int)response.StatusCode}): {errorDetalle}");
+                    basicResponse?.Dispose();
                 }
             }
             catch (Exception ex)
