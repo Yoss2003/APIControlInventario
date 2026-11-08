@@ -17,10 +17,18 @@ public partial class MasterCatalogKeys : Migration
         migrationBuilder.AddColumn<string>(
             name: "NameKey", table: "Brands", type: "text", nullable: false, defaultValue: "");
 
-        // Migración conservadora de nombres históricos: sin alterar el nombre visible.
+        // Mismo criterio que CatalogNames.Key para nombres comunes en español:
+        // minúsculas, espacios colapsados y tildes eliminadas, sin alterar "Name".
+        // No requiere instalar extensiones en PostgreSQL.
         migrationBuilder.Sql("""
-            UPDATE "Categories" SET "NameKey" = lower(btrim(regexp_replace("Name", '\s+', ' ', 'g')));
-            UPDATE "Brands" SET "NameKey" = lower(btrim(regexp_replace("Name", '\s+', ' ', 'g')));
+            UPDATE "Categories" SET "NameKey" =
+                translate(lower(btrim(regexp_replace("Name", '[[:space:]]+', ' ', 'g'))),
+                  'áàâäãåéèêëíìîïóòôöõúùûüñçýÿ',
+                  'aaaaaaeeeeiiiiooooouuuuncyy');
+            UPDATE "Brands" SET "NameKey" =
+                translate(lower(btrim(regexp_replace("Name", '[[:space:]]+', ' ', 'g'))),
+                  'áàâäãåéèêëíìîïóòôöõúùûüñçýÿ',
+                  'aaaaaaeeeeiiiiooooouuuuncyy');
             """);
 
         // Evita dos registros activos equivalentes en la misma empresa/categoría.
