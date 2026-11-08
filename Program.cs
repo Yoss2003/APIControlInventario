@@ -209,7 +209,9 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Ocurrió un error al aplicar las migraciones a la base de datos.");
+        logger.LogError(ex, "Ocurrió un error al aplicar las migraciones o preparar los inventarios.");
+        // No publicar una API aparentemente sana con el inventario maestro sin crear.
+        throw;
     }
 }
 
