@@ -51,6 +51,15 @@ namespace InventoryAPI.Models
 
         [StringLength(100)]
         public string? Departamento { get; set; }
+        // Descripción interna y opcional: por qué trabajamos con este proveedor.
+        [StringLength(700)]
+        public string? RelationshipDescription { get; set; }
+
+        // Instantánea de campos públicos de la consulta SUNAT avanzada.
+        // No contiene tokens; los datos fiscales son informativos e históricos.
+        [StringLength(10000)]
+        public string? FiscalDataJson { get; set; }
+
         // Detalle opcional de la consulta RUC avanzada. No crea columnas
         // ni sustituye los datos de contacto registrados manualmente.
         [NotMapped] public bool AdvancedDataAvailable { get; set; }
