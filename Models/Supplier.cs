@@ -54,6 +54,7 @@ namespace InventoryAPI.Models
         // Detalle opcional de la consulta RUC avanzada. No crea columnas
         // ni sustituye los datos de contacto registrados manualmente.
         [NotMapped] public bool AdvancedDataAvailable { get; set; }
+        [NotMapped] public bool LookupFromCache { get; set; }
         [NotMapped] public string? Ubigeo { get; set; }
         [NotMapped] public string? TipoContribuyente { get; set; }
         [NotMapped] public string? ActividadEconomica { get; set; }
