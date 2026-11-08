@@ -17,7 +17,7 @@ namespace InventoryAPI.Controllers
                   sh.InventoryId == i.Id && sh.CompanyId == companyId && sh.UserId == userId &&
                   (!edit || sh.AccessLevel == SharedInventory.AccessMode.Editor)))).Select(i => i.Id);
 
-        // Vista administrativa de entradas/salidas de todos los inventarios personales.
+        // Vista administrativa de entradas, salidas y custodias de inventarios personales.
         // Consulta los movimientos originales; no copia filas al inventario maestro.
         [HttpGet("master/history")]
         public async Task<IActionResult> MasterHistory(
@@ -33,8 +33,8 @@ namespace InventoryAPI.Controllers
             if (User.FindFirst("RoleId")?.Value is not ("1" or "2")) return Forbid();
             int companyId = ObtenerEmpresaSegura();
             if (companyId <= 0) return Unauthorized();
-            if (actionId.HasValue && actionId.Value is not (1 or 2))
-                return BadRequest(new { error = "Tipo válido: 1 entrada, 2 salida." });
+            if (actionId.HasValue && actionId.Value is not (1 or 2 or 3))
+                return BadRequest(new { error = "Tipo válido: 1 entrada, 2 salida, 3 custodia." });
             if (fromDate.HasValue && toDate.HasValue && fromDate > toDate)
                 return BadRequest(new { error = "El rango de fechas no es válido." });
 
@@ -47,7 +47,7 @@ namespace InventoryAPI.Controllers
                 join inventory in db.Inventories.AsNoTracking() on article.InventoryId equals inventory.Id
                 where movement.CompanyId == companyId && article.CompanyId == companyId &&
                     inventory.CompanyId == companyId && !inventory.IsMaster &&
-                    (movement.ActionId == 1 || movement.ActionId == 2)
+                    (movement.ActionId == 1 || movement.ActionId == 2 || movement.ActionId == 3)
                 select new
                 {
                     movement.Id,
