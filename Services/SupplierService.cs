@@ -3,10 +3,12 @@ using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services.IServices;
 using System.Text.Json;
+using InventoryAPI.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace InventoryAPI.Services
 {
-    public class SupplierService(IWorkFlow workFlow, HttpClient httpClient) : WorkContainer<Supplier>(workFlow), ISupplierService
+    public class SupplierService(IWorkFlow workFlow, HttpClient httpClient, AppDbContext db, IConfiguration configuration) : WorkContainer<Supplier>(workFlow), ISupplierService
     {
         public async Task<(bool Success, Supplier? Data, string Message)> ConsultarRucAsync(string ruc)
         {
@@ -20,10 +22,18 @@ namespace InventoryAPI.Services
                 // La caché se consulta desde el controller con CompanyId del JWT.
                 // No reutilizar proveedores de otras empresas por coincidencia de RUC.
 
-                var parametroToken = await _workFlow.Repository<Parameters>()
-                    .FindAsync(p => p.ParameterType == "API_KEY" && p.Name == "Decolecta_Token");
-
-                string apiToken = parametroToken.FirstOrDefault()?.Description ?? "";
+                // El token de consulta SUNAT es central. Nunca tomar el primero
+                // de todas las empresas ni mostrarlo a un usuario.
+                string apiToken = configuration["Decolecta:Token"]?.Trim() ?? "";
+                if (string.IsNullOrWhiteSpace(apiToken))
+                {
+                    apiToken = await db.Parameters.AsNoTracking()
+                        .Where(p => p.CompanyId == 1 && p.ParameterType == "API_KEY" &&
+                            p.Name == "Decolecta_Token")
+                        .OrderBy(p => p.InventoryId == 0 ? 0 : 1)
+                        .Select(p => p.Description)
+                        .FirstOrDefaultAsync() ?? "";
+                }
 
                 if (string.IsNullOrWhiteSpace(apiToken))
                 {
@@ -33,11 +43,11 @@ namespace InventoryAPI.Services
                 // 3. CONSULTA A DECOLECTA CON EL TOKEN DINÁMICO
                 string url = $"https://api.decolecta.com/v1/sunat/ruc?numero={ruc}";
 
-                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiToken);
                 request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
 
-                var response = await httpClient.SendAsync(request);
+                using var response = await httpClient.SendAsync(request);
                 string jsonString = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
