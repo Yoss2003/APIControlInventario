@@ -31,12 +31,21 @@ namespace InventoryAPI.Controllers
         public async Task<IActionResult> ConsultarRuc(string ruc)
         {
             int company = ObtenerEmpresaSegura();
-            var cached = await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(s =>
-                s.CompanyId == company && s.Ruc == ruc && s.IsActive);
-            if (cached != null) return Ok(cached);
+            if (!Regex.IsMatch(ruc, @"^\d{11}$"))
+                return BadRequest(new { error = "El RUC debe tener 11 dígitos." });
+            // El usuario solicitó expresamente consultar SUNAT: actualizar siempre
+            // los datos fiscales, aunque el proveedor ya exista en este catálogo.
             var result = await _supplierService.ConsultarRucAsync(ruc);
             if (!result.Success)
             {
+                // Contingencia: solo datos previamente registrados por ESTA empresa.
+                var cached = await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(s =>
+                    s.CompanyId == company && s.Ruc == ruc && s.IsActive);
+                if (cached is not null)
+                {
+                    cached.LookupFromCache = true;
+                    return Ok(cached);
+                }
                 if (result.Message.Contains("crítica")) return StatusCode(500, new { error = result.Message });
                 if (result.Message.Contains("no fue localizado")) return NotFound(new { error = result.Message });
                 return BadRequest(new { error = result.Message });
