@@ -28,6 +28,11 @@ public sealed class ParametersController(AppDbContext db) : BaseApiController
     private Task<Inventory?> Master() => db.Inventories
         .FirstOrDefaultAsync(i => i.CompanyId == CompanyId && i.IsMaster && i.IsActive);
 
+    // InventoryId=0 es el formato histórico de los parámetros de la Administración Central.
+    // Conservamos esos IDs y valores; no trasladamos ni duplicamos los 26 registros existentes.
+    private static bool IsCompanyParameter(Parameters parameter, int masterId) =>
+        parameter.InventoryId == 0 || parameter.InventoryId == masterId;
+
     private Task<bool> CanCreateAsync(int inventoryId)
     {
         var developer = IsDeveloper;
@@ -39,6 +44,7 @@ public sealed class ParametersController(AppDbContext db) : BaseApiController
     }
 
     // Acceso separado para la clave central; nunca aparece en GET de catálogos.
+    // Si existe en InventoryId=0, se actualiza ese registro sin crear otro.
     [HttpPut("GlobalToken")]
     public async Task<IActionResult> UpdateGlobalToken([FromBody] string newToken)
     {
@@ -95,7 +101,8 @@ public sealed class ParametersController(AppDbContext db) : BaseApiController
         // Serializa las altas de parámetros dentro de la misma empresa.
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(20261107, {CompanyId})");
         var existing = await db.Parameters.AsNoTracking()
-            .Where(p => p.CompanyId == CompanyId && p.InventoryId == master.Id).ToListAsync();
+            .Where(p => p.CompanyId == CompanyId &&
+                (p.InventoryId == 0 || p.InventoryId == master.Id)).ToListAsync();
         var original = existing.FirstOrDefault(p =>
             CatalogNames.Key(p.ParameterType) == CatalogNames.Key(input.ParameterType) &&
             CatalogNames.Key(p.Name) == CatalogNames.Key(input.Name));
@@ -125,11 +132,12 @@ public sealed class ParametersController(AppDbContext db) : BaseApiController
         var master = await Master();
         if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
         var item = await db.Parameters.FirstOrDefaultAsync(p =>
-            p.Id == id && p.CompanyId == CompanyId && p.InventoryId == master.Id);
+            p.Id == id && p.CompanyId == CompanyId &&
+            (p.InventoryId == 0 || p.InventoryId == master.Id));
         if (item is null) return NotFound();
         if (IsSecret(item)) return Forbid();
         var similar = await db.Parameters.AsNoTracking().Where(p => p.CompanyId == CompanyId &&
-            p.InventoryId == master.Id && p.Id != id).ToListAsync();
+            (p.InventoryId == 0 || p.InventoryId == master.Id) && p.Id != id).ToListAsync();
         if (similar.Any(p => CatalogNames.Key(p.ParameterType) == CatalogNames.Key(input.ParameterType) &&
             CatalogNames.Key(p.Name) == CatalogNames.Key(input.Name)))
             return Conflict(new { error = "Ya existe ese parámetro en el maestro." });
@@ -148,7 +156,8 @@ public sealed class ParametersController(AppDbContext db) : BaseApiController
         var master = await Master();
         if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
         var item = await db.Parameters.FirstOrDefaultAsync(p =>
-            p.Id == id && p.CompanyId == CompanyId && p.InventoryId == master.Id);
+            p.Id == id && p.CompanyId == CompanyId &&
+            (p.InventoryId == 0 || p.InventoryId == master.Id));
         if (item is null) return NotFound();
         if (IsSecret(item)) return Forbid();
         db.Parameters.Remove(item);
