@@ -51,6 +51,16 @@ namespace InventoryAPI.Models
 
         [StringLength(100)]
         public string? Departamento { get; set; }
+        // Detalle opcional de la consulta RUC avanzada. No crea columnas
+        // ni sustituye los datos de contacto registrados manualmente.
+        [NotMapped] public bool AdvancedDataAvailable { get; set; }
+        [NotMapped] public string? Ubigeo { get; set; }
+        [NotMapped] public string? TipoContribuyente { get; set; }
+        [NotMapped] public string? ActividadEconomica { get; set; }
+        [NotMapped] public string? NumeroTrabajadores { get; set; }
+        [NotMapped] public string? TipoFacturacion { get; set; }
+        [NotMapped] public string? TipoContabilidad { get; set; }
+        [NotMapped] public string? ComercioExterior { get; set; }
         [NotMapped]
         public bool Reused { get; set; }
         public bool IsActive { get; set; } = true;
