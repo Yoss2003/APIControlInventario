@@ -126,7 +126,33 @@ namespace InventoryAPI.Services
                         NumeroTrabajadores = Field(root, "numero_trabajadores"),
                         TipoFacturacion = Field(root, "tipo_facturacion"),
                         TipoContabilidad = Field(root, "tipo_contabilidad"),
-                        ComercioExterior = Field(root, "comercio_exterior")
+                        ComercioExterior = Field(root, "comercio_exterior"),
+                        FiscalDataJson = advancedAvailable
+                            ? JsonSerializer.Serialize(new Dictionary<string, object?>
+                            {
+                                ["tipo"] = Field(root, "tipo"),
+                                ["actividad_economica"] = Field(root, "actividad_economica"),
+                                ["ubigeo"] = Field(root, "ubigeo"),
+                                ["numero_trabajadores"] = Field(root, "numero_trabajadores"),
+                                ["tipo_facturacion"] = Field(root, "tipo_facturacion"),
+                                ["tipo_contabilidad"] = Field(root, "tipo_contabilidad"),
+                                ["comercio_exterior"] = Field(root, "comercio_exterior"),
+                                ["via_tipo"] = Field(root, "via_tipo"),
+                                ["via_nombre"] = Field(root, "via_nombre"),
+                                ["zona_codigo"] = Field(root, "zona_codigo"),
+                                ["zona_tipo"] = Field(root, "zona_tipo"),
+                                ["numero"] = Field(root, "numero"),
+                                ["interior"] = Field(root, "interior"),
+                                ["lote"] = Field(root, "lote"),
+                                ["dpto"] = Field(root, "dpto"),
+                                ["manzana"] = Field(root, "manzana"),
+                                ["kilometro"] = Field(root, "kilometro"),
+                                ["es_agente_retencion"] = root.TryGetProperty("es_agente_retencion", out var agente) &&
+                                    agente.ValueKind == JsonValueKind.True,
+                                ["es_buen_contribuyente"] = root.TryGetProperty("es_buen_contribuyente", out var buen) &&
+                                    buen.ValueKind == JsonValueKind.True
+                            })
+                            : null
                     };
                     return (true, supplier,
                         advancedAvailable ? "Consulta RUC avanzada completada." :
