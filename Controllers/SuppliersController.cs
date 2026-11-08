@@ -5,12 +5,52 @@ using InventoryAPI.Data;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 
 namespace InventoryAPI.Controllers
 {
     public class SuppliersController(ISupplierService supplierService, AppDbContext db) : BaseApiController
     {
         private readonly ISupplierService _supplierService = supplierService;
+        private static readonly HashSet<string> AllowedFiscalKeys = new(StringComparer.Ordinal)
+        {
+            "tipo", "actividad_economica", "ubigeo", "numero_trabajadores",
+            "tipo_facturacion", "tipo_contabilidad", "comercio_exterior",
+            "via_tipo", "via_nombre", "zona_codigo", "zona_tipo",
+            "numero", "interior", "lote", "dpto", "manzana", "kilometro",
+            "es_agente_retencion", "es_buen_contribuyente"
+        };
+
+        // La instantánea llega del navegador: validar forma y campos permitidos,
+        // evitando guardar JSON arbitrario o textos excesivos.
+        private static bool TryNormalizeFiscalData(string? source, out string? normalized)
+        {
+            normalized = null;
+            if (string.IsNullOrWhiteSpace(source)) return true;
+            if (source.Length > 10000) return false;
+            try
+            {
+                using var document = JsonDocument.Parse(source);
+                if (document.RootElement.ValueKind != JsonValueKind.Object) return false;
+                var data = new Dictionary<string, JsonElement>();
+                foreach (var field in document.RootElement.EnumerateObject())
+                {
+                    if (!AllowedFiscalKeys.Contains(field.Name)) continue;
+                    if (field.Value.ValueKind is JsonValueKind.String)
+                    {
+                        if ((field.Value.GetString()?.Length ?? 0) > 500) return false;
+                    }
+                    else if (field.Value.ValueKind is not (JsonValueKind.True or JsonValueKind.False or JsonValueKind.Null))
+                        return false;
+                    data[field.Name] = field.Value.Clone();
+                }
+                normalized = JsonSerializer.Serialize(data);
+                return true;
+            }
+            catch (JsonException) { return false; }
+        }
+
+
         private bool CanManageMaster => User.FindFirst("RoleId")?.Value is "1" or "2";
         private Task<Inventory?> Master(int company) => db.Inventories
             .FirstOrDefaultAsync(i => i.CompanyId == company && i.IsMaster && i.IsActive);
@@ -98,6 +138,11 @@ namespace InventoryAPI.Controllers
             existing.Provincia = supplier.Provincia;
             existing.Departamento = supplier.Departamento;
             existing.StatusId = supplier.StatusId;
+            existing.RelationshipDescription = supplier.RelationshipDescription?.Trim();
+            if (!TryNormalizeFiscalData(supplier.FiscalDataJson, out var fiscalData))
+                return BadRequest(new { error = "Los datos fiscales adicionales tienen un formato inválido." });
+            // Mantener los datos anteriores si el cliente no envió una nueva consulta.
+            existing.FiscalDataJson = fiscalData ?? existing.FiscalDataJson;
             await db.SaveChangesAsync();
             return NoContent();
         }
@@ -123,6 +168,10 @@ namespace InventoryAPI.Controllers
             supplier.InventoryId = master.Id;
             supplier.IsActive = true;
             supplier.BusinessName = supplier.BusinessName.Trim();
+            supplier.RelationshipDescription = supplier.RelationshipDescription?.Trim();
+            if (!TryNormalizeFiscalData(supplier.FiscalDataJson, out var fiscalData))
+                return BadRequest(new { error = "Los datos fiscales adicionales tienen un formato inválido." });
+            supplier.FiscalDataJson = fiscalData;
             try
             {
                 db.Suppliers.Add(supplier);
