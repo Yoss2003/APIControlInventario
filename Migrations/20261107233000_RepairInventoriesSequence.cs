@@ -41,7 +41,7 @@ public partial class RepairInventoriesSequence : Migration
                     (max_inventory_id = last_assigned AND NOT sequence_called) THEN
                     PERFORM setval(sequence_name::regclass, max_inventory_id, true);
                 END IF;
-            END
+            END;
             $repair_inventory_sequence$;
             """);
     }
