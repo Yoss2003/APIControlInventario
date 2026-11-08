@@ -1776,6 +1776,10 @@ namespace InventoryAPI.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<string>("FiscalDataJson")
+                        .HasMaxLength(10000)
+                        .HasColumnType("character varying(10000)");
+
                     b.Property<int>("InventoryId")
                         .HasColumnType("integer");
 
@@ -1789,6 +1793,10 @@ namespace InventoryAPI.Migrations
                     b.Property<string>("Provincia")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("RelationshipDescription")
+                        .HasMaxLength(700)
+                        .HasColumnType("character varying(700)");
 
                     b.Property<string>("Ruc")
                         .IsRequired()
