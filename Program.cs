@@ -201,11 +201,17 @@ using (var scope = app.Services.CreateScope())
             }
             context.SaveChanges();
         }
+
+        // Idempotente: aprovisiona el maestro y el inventario personal
+        // para empresas/usuarios anteriores a la Fase 3.5 (incluido YosMG).
+        InventoryProvisioner.EnsureExistingAsync(context).GetAwaiter().GetResult();
     }
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Ocurrió un error al aplicar las migraciones a la base de datos.");
+        logger.LogError(ex, "Ocurrió un error al aplicar las migraciones o preparar los inventarios.");
+        // No publicar una API aparentemente sana con el inventario maestro sin crear.
+        throw;
     }
 }
 

@@ -1,16 +1,39 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services.IServices;
 using InventoryAPI.Models;
+using InventoryAPI.Data;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using System.Text.RegularExpressions;
 
 namespace InventoryAPI.Controllers
 {
-    public class SuppliersController(ISupplierService supplierService) : BaseApiController
+    public class SuppliersController(ISupplierService supplierService, AppDbContext db) : BaseApiController
     {
         private readonly ISupplierService _supplierService = supplierService;
+        private bool CanManageMaster => User.FindFirst("RoleId")?.Value is "1" or "2";
+        private Task<Inventory?> Master(int company) => db.Inventories
+            .FirstOrDefaultAsync(i => i.CompanyId == company && i.IsMaster && i.IsActive);
+        private Task<bool> MayCreate(int company, int inventory)
+        {
+            var userId = ObtenerUsuarioSeguro();
+            var developer = User.FindFirst("RoleId")?.Value == "1";
+            return db.Inventories.AnyAsync(i =>
+                i.CompanyId == company && i.IsActive && !i.IsMaster &&
+                (i.Id == inventory || inventory == 0) &&
+                (developer || i.UserId == userId ||
+                 db.SharedInventories.Any(sh => sh.CompanyId == company &&
+                    sh.InventoryId == i.Id && sh.UserId == userId &&
+                    sh.AccessLevel == SharedInventory.AccessMode.Editor)));
+        }
 
         [HttpGet("ruc/{ruc}")]
         public async Task<IActionResult> ConsultarRuc(string ruc)
         {
+            int company = ObtenerEmpresaSegura();
+            var cached = await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(s =>
+                s.CompanyId == company && s.Ruc == ruc && s.IsActive);
+            if (cached != null) return Ok(cached);
             var result = await _supplierService.ConsultarRucAsync(ruc);
             if (!result.Success)
             {
@@ -41,45 +64,89 @@ namespace InventoryAPI.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> PutSupplier(int id, [FromBody] Supplier supplier)
         {
-            if (id != supplier.Id) return BadRequest();
-            if (!ModelState.IsValid) return BadRequest(ModelState);
+            if (id != supplier.Id || !ModelState.IsValid) return BadRequest(ModelState);
+            if (!CanManageMaster) return Forbid();
+            var company = ObtenerEmpresaSegura();
+            var master = await Master(company);
+            if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
+            var existing = await db.Suppliers.FirstOrDefaultAsync(s => s.Id == id &&
+                s.CompanyId == company && s.InventoryId == master.Id && s.IsActive);
+            if (existing is null) return NotFound();
+            if (!Regex.IsMatch(supplier.Ruc ?? "", @"^\d{11}$")) return BadRequest(new { error = "RUC inválido." });
+            if (await db.Suppliers.AnyAsync(s => s.CompanyId == company && s.Ruc == supplier.Ruc &&
+                s.Id != id && s.IsActive))
+                return Conflict(new { error = "Ya existe un proveedor con ese RUC." });
 
-            int companyId = ObtenerEmpresaSegura();
-            supplier.CompanyId = companyId;
-
-            var existingSupplier = await _supplierService.GetByIdAsync(id);
-            if (existingSupplier == null || existingSupplier.CompanyId != companyId) return NotFound();
-
-            var success = await _supplierService.UpdateAsync(supplier);
-            if (!success) return BadRequest("No se pudo actualizar el proveedor.");
-
+            existing.Ruc = supplier.Ruc;
+            existing.BusinessName = supplier.BusinessName.Trim();
+            existing.ContactName = supplier.ContactName;
+            existing.Phone = supplier.Phone;
+            existing.Email = supplier.Email;
+            existing.Address = supplier.Address;
+            existing.Estado = supplier.Estado;
+            existing.Condicion = supplier.Condicion;
+            existing.Distrito = supplier.Distrito;
+            existing.Provincia = supplier.Provincia;
+            existing.Departamento = supplier.Departamento;
+            existing.StatusId = supplier.StatusId;
+            await db.SaveChangesAsync();
             return NoContent();
         }
 
         [HttpPost]
         public async Task<IActionResult> PostSupplier([FromBody] Supplier supplier)
         {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
+            if (!ModelState.IsValid || !Regex.IsMatch(supplier.Ruc ?? "", @"^\d{11}$"))
+                return BadRequest(new { error = "El proveedor necesita un RUC válido de 11 dígitos." });
+            int company = ObtenerEmpresaSegura();
+            var master = await Master(company);
+            if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
+            if (!await MayCreate(company, supplier.InventoryId) && supplier.InventoryId != master.Id)
+                return Forbid();
+            if (supplier.InventoryId == master.Id && !await MayCreate(company, 0))
+                return Forbid();
 
-            supplier.CompanyId = ObtenerEmpresaSegura();
-            var success = await _supplierService.CreateAsync(supplier);
-
-            if (!success) return BadRequest("No se pudo crear.");
-            return CreatedAtAction(nameof(GetSupplier), new { id = supplier.Id }, supplier);
+            var existing = await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(s =>
+                s.CompanyId == company && s.Ruc == supplier.Ruc && s.IsActive);
+            if (existing is not null) { existing.Reused = true; return Ok(existing); }
+            supplier.Id = 0;
+            supplier.CompanyId = company;
+            supplier.InventoryId = master.Id;
+            supplier.IsActive = true;
+            supplier.BusinessName = supplier.BusinessName.Trim();
+            try
+            {
+                db.Suppliers.Add(supplier);
+                await db.SaveChangesAsync();
+                return CreatedAtAction(nameof(GetSupplier), new { id = supplier.Id }, supplier);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg &&
+                pg.SqlState == PostgresErrorCodes.UniqueViolation &&
+                pg.ConstraintName == "IX_Suppliers_Company_Ruc")
+            {
+                db.Entry(supplier).State = EntityState.Detached;
+                var conflict = await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(s =>
+                    s.CompanyId == company && s.Ruc == supplier.Ruc && s.IsActive);
+                if (conflict is null) return Conflict(new { error = "RUC duplicado. Actualiza el catálogo." });
+                conflict.Reused = true;
+                return Ok(conflict);
+            }
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteSupplier(int id)
         {
-            int companyId = ObtenerEmpresaSegura();
-            string deletedBy = ObtenerUsuarioSeguro().ToString();
-
-            var existingSupplier = await _supplierService.GetByIdAsync(id);
-            if (existingSupplier == null || existingSupplier.CompanyId != companyId) return NotFound();
-
-            var success = await _supplierService.DeleteAsync(id, deletedBy);
-            if (!success) return BadRequest("No se pudo eliminar el proveedor.");
-
+            if (!CanManageMaster) return Forbid();
+            int company = ObtenerEmpresaSegura();
+            var master = await Master(company);
+            if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
+            var supplier = await db.Suppliers.FirstOrDefaultAsync(s =>
+                s.Id == id && s.CompanyId == company && s.InventoryId == master.Id);
+            if (supplier is null) return NotFound();
+            if (await db.Articles.AnyAsync(a => a.CompanyId == company && a.SupplierId == id))
+                return Conflict(new { error = "El proveedor se utiliza en artículos y no se puede desactivar." });
+            supplier.IsActive = false;
+            await db.SaveChangesAsync();
             return NoContent();
         }
     }

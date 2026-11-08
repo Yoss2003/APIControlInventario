@@ -1,5 +1,6 @@
 using InventoryAPI.Models;
 using InventoryAPI.Data;
+using InventoryAPI.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -99,7 +100,7 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
                 c.IsActive, c.LogoUrl, c.PrimaryColorHex,
                 userCount = db.Users.Count(u => u.CompanyId == c.Id && u.IsActive),
                 totalUsers = db.Users.Count(u => u.CompanyId == c.Id),
-                inventoryCount = db.Inventories.Count(i => i.CompanyId == c.Id),
+                inventoryCount = db.Inventories.Count(i => i.CompanyId == c.Id && !i.IsMaster),
                 license = db.CompanyLicenses.Where(l => l.CompanyId == c.Id).Select(l => new
                 { l.Plan, l.MaxUsers, l.StartsAt, l.ExpiresAt, l.IsEnabled }).FirstOrDefault()
             }).ToListAsync();
@@ -151,6 +152,8 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
             IsEnabled = input.LicenseEnabled,
             UpdatedAt = now
         });
+        // Alta de empresa y maestro forman parte de la MISMA transacción.
+        db.Inventories.Add(InventoryProvisioner.NewMaster(company.Id));
         await db.SaveChangesAsync();
         await tx.CommitAsync();
         return Ok(new { company.Id });
@@ -293,7 +296,7 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
             return Conflict(new { error = "No se puede desactivar la empresa administradora." });
         // Nunca borrar en cascada. Se bloquea la baja si está referenciada.
         if (await db.Users.AnyAsync(u => u.CompanyId == id) ||
-            await db.Inventories.AnyAsync(i => i.CompanyId == id) ||
+            await db.Inventories.AnyAsync(i => i.CompanyId == id && !i.IsMaster) ||
             await db.Categories.AnyAsync(c => c.CompanyId == id) ||
             await db.Articles.AnyAsync(a => a.CompanyId == id) ||
             await db.Movements.AnyAsync(m => m.CompanyId == id))

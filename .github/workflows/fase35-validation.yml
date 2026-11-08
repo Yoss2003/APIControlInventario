@@ -1,0 +1,22 @@
+name: Validar Fase 3.5 (API)
+on:
+  push:
+    branches: [fase-3-5-base-inventarios-20261107]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restaurar
+        run: dotnet restore InventoryAPI.csproj
+      - name: Compilar API sin publicar ni migrar
+        run: dotnet build InventoryAPI.csproj --no-restore -c Release

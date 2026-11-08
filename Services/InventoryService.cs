@@ -19,7 +19,8 @@ public class InventoryService(IWorkFlow workFlow, AppDbContext db)
 
         var source = await db.Inventories.AsNoTracking()
             .FirstOrDefaultAsync(i => i.Id == request.InventoryId && i.IsActive);
-        if (source == null) return (false, "Inventario inexistente o desactivado.");
+        if (source == null || source.IsMaster)
+            return (false, "El inventario no existe, está desactivado o es un maestro no compartible.");
 
         string identifier = request.GuestIdentifier.Trim();
         var recipient = await db.Users.AsNoTracking()

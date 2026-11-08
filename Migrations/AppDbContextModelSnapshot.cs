@@ -465,6 +465,10 @@ namespace InventoryAPI.Migrations
                     b.Property<int>("InventoryId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("NameKey")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -474,6 +478,10 @@ namespace InventoryAPI.Migrations
                         .HasColumnType("character varying(255)");
 
                     b.HasKey("Id");
+                    b.HasIndex("CompanyId", "CategoryId", "NameKey")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Brands_Company_Category_NameKey")
+                        .HasFilter("\"IsActive\" = true");
 
                     b.ToTable("Brands");
                 });
@@ -506,6 +514,10 @@ namespace InventoryAPI.Migrations
 
                     b.Property<int>("InventoryId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("NameKey")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
@@ -570,6 +582,15 @@ namespace InventoryAPI.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+                    b.HasIndex("CompanyId", "NameKey")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Categories_MasterRoot_NameKey")
+                        .HasFilter("\"ParentCategoryId\" IS NULL AND \"IsActive\" = true");
+
+                    b.HasIndex("CompanyId", "ParentCategoryId", "NameKey")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Categories_MasterChild_NameKey")
+                        .HasFilter("\"ParentCategoryId\" IS NOT NULL AND \"IsActive\" = true");
 
                     b.ToTable("Categories");
                 });
@@ -1037,6 +1058,9 @@ namespace InventoryAPI.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsMaster")
+                        .HasColumnType("boolean");
+
                     b.Property<DateTime>("ModificationDate")
                         .HasColumnType("timestamp with time zone");
 
@@ -1048,6 +1072,11 @@ namespace InventoryAPI.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Inventories_CompanyId_Master")
+                        .HasFilter("\"IsMaster\" = true");
 
                     b.ToTable("Inventories");
                 });
@@ -1770,6 +1799,10 @@ namespace InventoryAPI.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+                    b.HasIndex("CompanyId", "Ruc")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Suppliers_Company_Ruc")
+                        .HasFilter("\"IsActive\" = true");
 
                     b.ToTable("Suppliers");
                 });

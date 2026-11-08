@@ -54,6 +54,31 @@ namespace InventoryAPI.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            // Nunca puede haber dos inventarios maestros para una misma empresa.
+            modelBuilder.Entity<Inventory>(e => {
+                e.HasIndex(x => x.CompanyId)
+                    .IsUnique()
+                    .HasDatabaseName("IX_Inventories_CompanyId_Master")
+                    .HasFilter("\"IsMaster\" = true");
+            });
+            modelBuilder.Entity<Category>(e => {
+                e.HasIndex(x => new { x.CompanyId, x.NameKey }).IsUnique()
+                    .HasDatabaseName("IX_Categories_MasterRoot_NameKey")
+                    .HasFilter("\"ParentCategoryId\" IS NULL AND \"IsActive\" = true");
+                e.HasIndex(x => new { x.CompanyId, x.ParentCategoryId, x.NameKey }).IsUnique()
+                    .HasDatabaseName("IX_Categories_MasterChild_NameKey")
+                    .HasFilter("\"ParentCategoryId\" IS NOT NULL AND \"IsActive\" = true");
+            });
+            modelBuilder.Entity<Supplier>(e => {
+                e.HasIndex(x => new { x.CompanyId, x.Ruc }).IsUnique()
+                    .HasDatabaseName("IX_Suppliers_Company_Ruc")
+                    .HasFilter("\"IsActive\" = true");
+            });
+            modelBuilder.Entity<Brand>(e => {
+                e.HasIndex(x => new { x.CompanyId, x.CategoryId, x.NameKey }).IsUnique()
+                    .HasDatabaseName("IX_Brands_Company_Category_NameKey")
+                    .HasFilter("\"IsActive\" = true");
+            });
             modelBuilder.Entity<ArticleUnitOperation>(e => {
                 e.HasIndex(x => x.ArticleDetailId).IsUnique().HasFilter("\"IsReversed\" = false");
                 e.HasIndex(x => new { x.CompanyId, x.ArticleId, x.SaleId });

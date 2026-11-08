@@ -51,6 +51,8 @@ namespace InventoryAPI.Models
 
         [StringLength(100)]
         public string? Departamento { get; set; }
+        [NotMapped]
+        public bool Reused { get; set; }
         public bool IsActive { get; set; } = true;
         public int CompanyId { get; set; }
     }

@@ -88,6 +88,7 @@ namespace InventoryAPI.Services
                 category.CategoryMeasurementUnits = null;
 
                 categoriaExistente.Name = category.Name;
+                categoriaExistente.NameKey = category.NameKey;
                 categoriaExistente.Description = category.Description;
                 categoriaExistente.ParentCategoryId = category.ParentCategoryId;
                 categoriaExistente.TrackingMode = category.TrackingMode;
