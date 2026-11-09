@@ -30,6 +30,11 @@ builder.Services.AddHostedService<ApprovalCleanupService>();
 
 // Soporte para clientes HTTP (Necesario para consultar SUNAT)
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient<PrivateMediaStorage>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
+
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
