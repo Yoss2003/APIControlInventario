@@ -101,9 +101,12 @@ public sealed class PrivateMediaStorage(HttpClient client, IConfiguration config
             {
                 errorMessage = "Respuesta no JSON de Supabase; revisar estado HTTP.";
             }
-            string Clean(string value) => Regex.Replace(
-                Regex.Replace(value, @"sb_(?:secret|publishable)_[A-Za-z0-9_-]+", "[CLAVE OCULTA]"),
-                @"[\x00-\x1F\x7F]", " ")[..Math.Min(400, value.Length)];
+            string Clean(string value)
+            {
+                var cleaned = Regex.Replace(value, @"sb_(?:secret|publishable)_[A-Za-z0-9_-]+", "[CLAVE OCULTA]");
+                cleaned = Regex.Replace(cleaned, @"[\x00-\x1F\x7F]", " ");
+                return cleaned.Length > 400 ? cleaned[..400] : cleaned;
+            }
             throw new HttpRequestException(
                 $"Supabase Storage rechazo la carga (HTTP {(int)response.StatusCode}, codigo: {Clean(errorCode)}, detalle: {Clean(errorMessage)}).");
         }
