@@ -2,17 +2,20 @@ using InventoryAPI.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using InventoryAPI.Services;
 
 namespace InventoryAPI.Controllers;
 
 [Authorize]
 [ApiController]
 [Route("api/Articles")]
-public sealed class ArticleMediaController(AppDbContext db, IWebHostEnvironment environment) : ControllerBase
+public sealed class ArticleMediaController(AppDbContext db, IWebHostEnvironment environment, PrivateMediaStorage storage, ILogger<ArticleMediaController> logger) : ControllerBase
 {
     private bool IsDeveloper => User.FindFirst("RoleId")?.Value == "1";
     private readonly AppDbContext _db = db;
     private readonly IWebHostEnvironment _environment = environment;
+    private readonly PrivateMediaStorage _storage = storage;
+    private readonly ILogger<ArticleMediaController> _logger = logger;
     private bool TryCompany(out int companyId) =>
         int.TryParse(User.FindFirst("CompanyId")?.Value, out companyId) && companyId > 0;
 
@@ -52,39 +55,45 @@ public sealed class ArticleMediaController(AppDbContext db, IWebHostEnvironment 
         if (voucher is not null && !await ValidSignature(voucher, true))
             return BadRequest(new { error = "Comprobante inválido. Usa imagen o PDF (máx. 10 MB)." });
 
-        string folder = Path.Combine(_environment.ContentRootPath, "PrivateFiles", "articles", companyId.ToString(), id.ToString());
-        Directory.CreateDirectory(folder);
+        if (!_storage.IsConfigured)
+            return StatusCode(503, new { error = "Almacenamiento privado no configurado en la API." });
+
         var written = new List<string>();
-        var previousPhoto = article.MainPhotoPath;
-        var previousVoucher = article.MainVoucherPath;
+        var oldPhoto = article.MainPhotoPath;
+        var oldVoucher = article.MainVoucherPath;
         try
         {
             foreach (var (file, kind) in new[] { (photo, "photo"), (voucher, "voucher") })
             {
                 if (file is null) continue;
-                var name = Guid.NewGuid().ToString("N") + Path.GetExtension(file.FileName).ToLowerInvariant();
-                var full = Path.Combine(folder, name);
-                await using (var output = new FileStream(full, FileMode.CreateNew))
-                    await file.CopyToAsync(output);
-                written.Add(full);
-                var rel = Path.Combine(companyId.ToString(), id.ToString(), name).Replace('\\','/');
-                if (kind == "photo") article.MainPhotoPath = rel;
-                else article.MainVoucherPath = rel;
+                var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+                var objectKey = PrivateMediaStorage.NewKey(companyId, "articles", id, kind, ext);
+                var stored = await _storage.UploadAsync(objectKey, file, MediaType(ext), HttpContext.RequestAborted);
+                written.Add(stored);
+                if (kind == "photo") article.MainPhotoPath = stored;
+                else article.MainVoucherPath = stored;
             }
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync(HttpContext.RequestAborted);
         }
-        catch
+        catch (Exception ex)
         {
-            foreach (var file in written) if (System.IO.File.Exists(file)) System.IO.File.Delete(file);
-            return StatusCode(500, new { error = "No se pudieron almacenar los archivos." });
+            _logger.LogError(ex, "No se pudo registrar el archivo privado del artículo {ArticleId}", id);
+            foreach (var uploaded in written)
+            {
+                try { await _storage.DeleteAsync(uploaded, CancellationToken.None); }
+                catch (Exception cleanupError) { _logger.LogWarning(cleanupError, "Objeto huérfano pendiente de limpiar"); }
+            }
+            return StatusCode(502, new { error = "No se pudo guardar el archivo en almacenamiento privado." });
         }
-        foreach (var old in new[] { photo != null ? previousPhoto : null, voucher != null ? previousVoucher : null })
-        {
-            if (string.IsNullOrWhiteSpace(old)) continue;
-            var prior = Path.Combine(_environment.ContentRootPath, "PrivateFiles", "articles", old.Replace('/', Path.DirectorySeparatorChar));
-            if (Path.GetFullPath(prior).StartsWith(Path.GetFullPath(folder) + Path.DirectorySeparatorChar) && System.IO.File.Exists(prior))
-                System.IO.File.Delete(prior);
-        }
+
+        // No borrar archivos legacy de disco hasta migrarlos. Los nuevos objetos
+        // reemplazados pueden eliminarse después de guardar la nueva referencia.
+        foreach (var old in new[] { photo != null ? oldPhoto : null, voucher != null ? oldVoucher : null })
+            if (PrivateMediaStorage.IsCloudReference(old))
+            {
+                try { await _storage.DeleteAsync(old!, CancellationToken.None); }
+                catch (Exception ex) { _logger.LogWarning(ex, "No se pudo limpiar un objeto anterior del artículo {ArticleId}", id); }
+            }
         return Ok(new { article.MainPhotoPath, article.MainVoucherPath });
     }
 
@@ -95,17 +104,25 @@ public sealed class ArticleMediaController(AppDbContext db, IWebHostEnvironment 
         if (kind is not ("photo" or "voucher")) return BadRequest(new { error = "Tipo desconocido." });
         var article = await _db.Articles.FirstOrDefaultAsync(a => a.Id == id && a.CompanyId == companyId);
         if (article is null) return NotFound();
-        if (!await AccessibleInventoryIds(companyId, int.Parse(User.FindFirst("UserId")?.Value ?? "0"), true).ContainsAsync(article.InventoryId)) return Forbid();
-        var relative = kind == "photo" ? article.MainPhotoPath : article.MainVoucherPath;
+        if (!await AccessibleInventoryIds(companyId, int.Parse(User.FindFirst("UserId")?.Value ?? "0"), true)
+            .ContainsAsync(article.InventoryId)) return Forbid();
+        var previous = kind == "photo" ? article.MainPhotoPath : article.MainVoucherPath;
+        if (PrivateMediaStorage.IsCloudReference(previous) && !_storage.IsConfigured)
+            return StatusCode(503, new { error = "Almacenamiento privado no configurado en la API." });
         if (kind == "photo") article.MainPhotoPath = null;
         else article.MainVoucherPath = null;
-        await _db.SaveChangesAsync();
-        if (!string.IsNullOrWhiteSpace(relative))
+        await _db.SaveChangesAsync(HttpContext.RequestAborted);
+        if (PrivateMediaStorage.IsCloudReference(previous))
+        {
+            try { await _storage.DeleteAsync(previous!, CancellationToken.None); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Objeto privado pendiente de limpieza tras borrar medio {ArticleId}", id); }
+        }
+        else if (!string.IsNullOrWhiteSpace(previous))
         {
             var root = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "PrivateFiles", "articles"));
-            var full = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
-            if (full.StartsWith(root + Path.DirectorySeparatorChar) && System.IO.File.Exists(full))
-                System.IO.File.Delete(full);
+            var file = Path.GetFullPath(Path.Combine(root, previous.Replace('/', Path.DirectorySeparatorChar)));
+            if (file.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) && System.IO.File.Exists(file))
+                System.IO.File.Delete(file);
         }
         return NoContent();
     }
@@ -114,17 +131,45 @@ public sealed class ArticleMediaController(AppDbContext db, IWebHostEnvironment 
     public async Task<IActionResult> Download(int id, string kind)
     {
         if (!TryCompany(out var companyId)) return Unauthorized();
+        if (kind is not ("photo" or "voucher")) return BadRequest(new { error = "Tipo desconocido." });
         var article = await _db.Articles.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id && a.CompanyId == companyId);
-        if (article == null) return NotFound();
-        if (!await AccessibleInventoryIds(companyId, int.Parse(User.FindFirst("UserId")?.Value ?? "0")).ContainsAsync(article.InventoryId)) return Forbid();
-        var relative = kind == "photo" ? article.MainPhotoPath : kind == "voucher" ? article.MainVoucherPath : null;
-        if (string.IsNullOrWhiteSpace(relative)) return NotFound();
+        if (article is null) return NotFound();
+        if (!await AccessibleInventoryIds(companyId, int.Parse(User.FindFirst("UserId")?.Value ?? "0"))
+            .ContainsAsync(article.InventoryId)) return Forbid();
+        var reference = kind == "photo" ? article.MainPhotoPath : article.MainVoucherPath;
+        if (string.IsNullOrWhiteSpace(reference)) return NotFound();
+
+        Response.Headers.CacheControl = "private, no-store";
+        if (PrivateMediaStorage.IsCloudReference(reference))
+        {
+            if (!_storage.IsConfigured)
+                return StatusCode(503, new { error = "Almacenamiento privado no configurado en la API." });
+            try
+            {
+                var remote = await _storage.DownloadAsync(reference, HttpContext.RequestAborted);
+                if (remote is null) return NotFound();
+                return File(remote.Value.Content, MediaType(Path.GetExtension(reference)), enableRangeProcessing: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error consultando medio privado del artículo {ArticleId}", id);
+                return StatusCode(502, new { error = "No se pudo recuperar el archivo del almacenamiento privado." });
+            }
+        }
+
+        // Compatibilidad: no romper registros que todavía apuntan a disco.
         var root = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "PrivateFiles", "articles"));
-        var file = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
-        if (!file.StartsWith(root + Path.DirectorySeparatorChar) || !System.IO.File.Exists(file)) return NotFound();
-        var ext = Path.GetExtension(file).ToLowerInvariant();
-        var type = ext switch { ".pdf" => "application/pdf", ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
-        Response.Headers["Cache-Control"] = "private, no-store";
-        return PhysicalFile(file, type, enableRangeProcessing: true);
+        var path = Path.GetFullPath(Path.Combine(root, reference.Replace('/', Path.DirectorySeparatorChar)));
+        if (!path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+            !System.IO.File.Exists(path)) return NotFound();
+        return PhysicalFile(path, MediaType(Path.GetExtension(path)), enableRangeProcessing: true);
+    }
+
+    private static string MediaType(string pathOrExtension)
+    {
+        var ext = pathOrExtension.StartsWith('.') ? pathOrExtension.ToLowerInvariant() :
+            Path.GetExtension(pathOrExtension).ToLowerInvariant();
+        return ext switch { ".pdf" => "application/pdf", ".png" => "image/png",
+            ".webp" => "image/webp", _ => "image/jpeg" };
     }
 }
