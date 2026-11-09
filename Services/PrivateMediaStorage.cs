@@ -65,17 +65,18 @@ public sealed class PrivateMediaStorage(HttpClient client, IConfiguration config
     }
 
 
+
     public async Task<string> UploadAsync(
         string key,
         IFormFile file,
         string contentType,
         CancellationToken ct)
     {
+        if (file.Length <= 0)
+            throw new InvalidDataException(
+                "El archivo está vacío.");
 
         using var request = Request(HttpMethod.Post, key);
-
-        if (file.Length <= 0)
-            throw new InvalidDataException("El archivo está vacío.");
 
         await using var input = file.OpenReadStream();
         using var body = new StreamContent(input);
@@ -83,86 +84,30 @@ public sealed class PrivateMediaStorage(HttpClient client, IConfiguration config
         body.Headers.ContentType =
             new MediaTypeHeaderValue(contentType);
 
-        // Indicamos explícitamente el tamaño del archivo.
         body.Headers.ContentLength = file.Length;
 
         request.Headers.Accept.Add(
-            new MediaTypeWithQualityHeaderValue("application/json"));
+            new MediaTypeWithQualityHeaderValue(
+                "application/json"));
 
         request.Content = body;
-
 
         using var response = await _client.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
             ct);
 
-
-
-
         if (!response.IsSuccessStatusCode)
         {
-            var detalle = await response.Content.ReadAsStringAsync(ct);
-
-            var servidor = response.Headers.Server.ToString();
-
-            var cfRay = response.Headers.TryGetValues(
-                "cf-ray", out var valores)
-                ? string.Join(", ", valores)
-                : "NO DISPONIBLE";
-
-            string resultadoBucket;
-
-            try
-            {
-                var url = _config["Supabase:Url"]!.TrimEnd('/');
-                var bucket = Uri.EscapeDataString(
-                    _config["Supabase:Bucket"]!);
-
-                using var prueba = new HttpRequestMessage(
-                    HttpMethod.Head,
-                    $"{url}/storage/v1/bucket/{bucket}");
-
-                var secret = _config["Supabase:SecretKey"]!.Trim();
-
-                prueba.Headers.TryAddWithoutValidation(
-                    "apikey", secret);
-
-                if (!secret.StartsWith(
-                    "sb_secret_", StringComparison.Ordinal))
-                {
-                    prueba.Headers.Authorization =
-                        new AuthenticationHeaderValue("Bearer", secret);
-                }
-
-                using var resultado = await _client.SendAsync(
-                    prueba,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    ct);
-
-                resultadoBucket =
-                    $"HTTP {(int)resultado.StatusCode}; " +
-                    $"Server: {resultado.Headers.Server}";
-            }
-            catch (HttpRequestException ex)
-            {
-                resultadoBucket = $"Error de conexion: {ex.GetType().Name}";
-            }
-
             throw new HttpRequestException(
-                $"DIAGNOSTICO SUPABASE V4\n" +
-                $"SUBIDA HTTP: {(int)response.StatusCode}\n" +
-                $"SERVIDOR: {servidor}\n" +
-                $"CF-RAY: {cfRay}\n" +
-                $"ARCHIVO BYTES: {file.Length}\n" +
-                $"TIPO ARCHIVO: {contentType}\n" +
-                $"PRUEBA BUCKET: {resultadoBucket}\n" +
-                $"DETALLE: {detalle}");
+                $"Supabase Storage rechazó la carga " +
+                $"(HTTP {(int)response.StatusCode}).",
+                null,
+                response.StatusCode);
         }
 
         return ReferencePrefix + ExtractKey(key);
     }
-
 
     public async Task<(byte[] Content, string ContentType)?> DownloadAsync(string reference, CancellationToken ct)
     {
