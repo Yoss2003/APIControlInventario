@@ -34,6 +34,7 @@ builder.Services.AddHttpClient<PrivateMediaStorage>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(45);
 });
+builder.Services.AddScoped<LegacyMediaMigrator>();
 
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -218,6 +219,16 @@ using (var scope = app.Services.CreateScope())
         // No publicar una API aparentemente sana con el inventario maestro sin crear.
         throw;
     }
+}
+
+// Ejecución puntual para trasladar archivos existentes: nunca al arrancar normal.
+// Mantiene los originales para que el propietario pueda revisar el resultado.
+if (args.Contains("--migrate-private-media", StringComparer.OrdinalIgnoreCase))
+{
+    using var migrationScope = app.Services.CreateScope();
+    var migrator = migrationScope.ServiceProvider.GetRequiredService<LegacyMediaMigrator>();
+    await migrator.RunAsync();
+    return;
 }
 
 app.Run();
