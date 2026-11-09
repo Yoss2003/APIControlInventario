@@ -3,17 +3,20 @@ using InventoryAPI.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using InventoryAPI.Services;
 
 namespace InventoryAPI.Controllers;
 
 [Authorize]
 [ApiController]
 [Route("api/Assignments")]
-public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment environment) : ControllerBase
+public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment environment, PrivateMediaStorage storage, ILogger<AssignmentsController> logger) : ControllerBase
 {
     private bool IsDeveloper => User.FindFirst("RoleId")?.Value == "1";
     private readonly AppDbContext _db = db;
     private readonly IWebHostEnvironment _env = environment;
+    private readonly PrivateMediaStorage _storage = storage;
+    private readonly ILogger<AssignmentsController> _logger = logger;
 
     public sealed record AssignRequest(
         int ArticleId, decimal Quantity, string RecipientName, int? RecipientUserId,
@@ -174,35 +177,49 @@ public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment e
         return CreatedAtAction(nameof(Events), new { id = assignment.Id }, new { id = assignment.Id });
     }
 
+    // Los archivos de custodias se guardan en Supabase Storage privado.
+    // EvidencePath solo contiene una referencia opaca con prefijo sb:.
     [HttpPost("{id:int}/evidence")]
     [RequestSizeLimit(10 * 1024 * 1024)]
     public async Task<IActionResult> UploadEvidence(int id, IFormFile file)
     {
         if (!TryScope(out var companyId, out var userId)) return Unauthorized();
         var assignment = await _db.ArticleAssignments.FirstOrDefaultAsync(a => a.Id == id && a.CompanyId == companyId);
-        if (assignment == null) return NotFound();
+        if (assignment is null) return NotFound();
         if (assignment.AssignedByUserId != userId) return Forbid();
-        if (file.Length is <= 0 or > 8_000_000) return BadRequest(new { error = "Imagen inválida (máx 8 MB)." });
+        if (file.Length is <= 0 or > 8_000_000)
+            return BadRequest(new { error = "Imagen inválida (máx. 8 MB)." });
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (ext is not (".jpg" or ".jpeg" or ".png" or ".webp"))
-            return BadRequest(new { error = "Solo se aceptan imágenes." });
-        var folder = Path.Combine(_env.ContentRootPath, "PrivateFiles", "assignments", companyId.ToString(), id.ToString());
-        Directory.CreateDirectory(folder);
-        var newName = Guid.NewGuid().ToString("N") + ext;
-        var destination = Path.Combine(folder, newName);
+        if (ext is not (".jpg" or ".jpeg" or ".png" or ".webp") ||
+            !await IsValidEvidence(file, ext, HttpContext.RequestAborted))
+            return BadRequest(new { error = "Solo se aceptan imágenes JPG, PNG o WEBP válidas." });
+        if (!_storage.IsConfigured)
+            return StatusCode(503, new { error = "Almacenamiento privado no configurado en la API." });
+
+        var previous = assignment.EvidencePath;
+        string? uploaded = null;
         try
         {
-            await using (var output = new FileStream(destination, FileMode.CreateNew))
-                await file.CopyToAsync(output);
-            assignment.EvidencePath = Path.Combine(companyId.ToString(), id.ToString(), newName).Replace('\\', '/');
-            await _db.SaveChangesAsync();
-            return Ok(new { evidence = true });
+            var key = PrivateMediaStorage.NewKey(companyId, "assignments", id, "evidence", ext);
+            var mime = ext switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
+            uploaded = await _storage.UploadAsync(key, file, mime, HttpContext.RequestAborted);
+            assignment.EvidencePath = uploaded;
+            await _db.SaveChangesAsync(HttpContext.RequestAborted);
         }
-        catch
+        catch (Exception ex)
         {
-            if (System.IO.File.Exists(destination)) System.IO.File.Delete(destination);
-            return StatusCode(500, new { error = "No se pudo almacenar la evidencia." });
+            _logger.LogError(ex, "No se pudo almacenar la evidencia privada de la custodia {AssignmentId}", id);
+            if (uploaded is not null)
+                try { await _storage.DeleteAsync(uploaded, CancellationToken.None); }
+                catch (Exception cleanupError) { _logger.LogWarning(cleanupError, "Objeto de evidencia huérfano pendiente de limpieza"); }
+            return StatusCode(502, new { error = "No se pudo guardar la evidencia en almacenamiento privado." });
         }
+
+        if (PrivateMediaStorage.IsCloudReference(previous))
+            try { await _storage.DeleteAsync(previous!, CancellationToken.None); }
+            catch (Exception ex) { _logger.LogWarning(ex, "No se pudo eliminar evidencia reemplazada {AssignmentId}", id); }
+        // Los archivos anteriores a este cambio permanecen intactos en disco.
+        return Ok(new { evidence = true });
     }
 
     [HttpGet("{id:int}/evidence")]
@@ -210,14 +227,49 @@ public sealed class AssignmentsController(AppDbContext db, IWebHostEnvironment e
     {
         if (!TryScope(out var companyId, out var userId)) return Unauthorized();
         var assignment = await Visible(companyId, userId).FirstOrDefaultAsync(a => a.Id == id);
-        if (assignment == null || string.IsNullOrWhiteSpace(assignment.EvidencePath)) return NotFound();
+        if (assignment is null || string.IsNullOrWhiteSpace(assignment.EvidencePath)) return NotFound();
+
+        var reference = assignment.EvidencePath;
+        Response.Headers.CacheControl = "private, no-store";
+        if (PrivateMediaStorage.IsCloudReference(reference))
+        {
+            if (!_storage.IsConfigured)
+                return StatusCode(503, new { error = "Almacenamiento privado no configurado en la API." });
+            try
+            {
+                var remote = await _storage.DownloadAsync(reference, HttpContext.RequestAborted);
+                if (remote is null) return NotFound();
+                var ext = Path.GetExtension(reference).ToLowerInvariant();
+                var type = ext switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
+                return File(remote.Value.Content, type);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudo consultar la evidencia remota {AssignmentId}", id);
+                return StatusCode(502, new { error = "No se pudo recuperar la evidencia privada." });
+            }
+        }
+
+        // Ruta antigua: disponible solo mientras se migran registros previos.
         var root = Path.GetFullPath(Path.Combine(_env.ContentRootPath, "PrivateFiles", "assignments"));
-        var full = Path.GetFullPath(Path.Combine(root, assignment.EvidencePath.Replace('/', Path.DirectorySeparatorChar)));
-        if (!full.StartsWith(root + Path.DirectorySeparatorChar) || !System.IO.File.Exists(full)) return NotFound();
-        var ext = Path.GetExtension(full).ToLowerInvariant();
-        var type = ext switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
-        Response.Headers["Cache-Control"] = "private, no-store";
-        return PhysicalFile(full, type);
+        var full = Path.GetFullPath(Path.Combine(root, reference.Replace('/', Path.DirectorySeparatorChar)));
+        if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+            !System.IO.File.Exists(full)) return NotFound();
+        var extension = Path.GetExtension(full).ToLowerInvariant();
+        var mimeType = extension switch { ".png" => "image/png", ".webp" => "image/webp", _ => "image/jpeg" };
+        return PhysicalFile(full, mimeType);
+    }
+
+    private static async Task<bool> IsValidEvidence(IFormFile file, string ext, CancellationToken ct)
+    {
+        await using var input = file.OpenReadStream();
+        var magic = new byte[12];
+        var read = await input.ReadAsync(magic, ct);
+        var jpg = read >= 3 && magic[0] == 0xFF && magic[1] == 0xD8 && magic[2] == 0xFF;
+        var png = read >= 8 && magic.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
+        var webp = read >= 12 && System.Text.Encoding.ASCII.GetString(magic, 0, 4) == "RIFF" &&
+            System.Text.Encoding.ASCII.GetString(magic, 8, 4) == "WEBP";
+        return (jpg && ext is ".jpg" or ".jpeg") || (png && ext == ".png") || (webp && ext == ".webp");
     }
 
     [HttpPost("{id:int}/return")]
