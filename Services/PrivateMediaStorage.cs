@@ -76,7 +76,37 @@ public sealed class PrivateMediaStorage(HttpClient client, IConfiguration config
         request.Content = body;
         using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Supabase Storage rechazó la carga (HTTP {(int)response.StatusCode}).");
+        {
+            // Storage devuelve un codigo y un mensaje precisos en el cuerpo JSON.
+            // No registrar cabeceras, URL completas ni credenciales del servidor.
+            string errorCode = "UnknownStorageError";
+            string errorMessage = "Sin detalle devuelto por Supabase.";
+            try
+            {
+                var raw = await response.Content.ReadAsStringAsync(ct);
+                using var document = System.Text.Json.JsonDocument.Parse(raw);
+                if (document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    foreach (var prop in document.RootElement.EnumerateObject())
+                    {
+                        if (prop.Value.ValueKind != System.Text.Json.JsonValueKind.String) continue;
+                        if (prop.NameEquals("code") || prop.NameEquals("error"))
+                            errorCode = prop.Value.GetString() ?? errorCode;
+                        else if (prop.NameEquals("message"))
+                            errorMessage = prop.Value.GetString() ?? errorMessage;
+                    }
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                errorMessage = "Respuesta no JSON de Supabase; revisar estado HTTP.";
+            }
+            string Clean(string value) => Regex.Replace(
+                Regex.Replace(value, @"sb_(?:secret|publishable)_[A-Za-z0-9_-]+", "[CLAVE OCULTA]"),
+                @"[\x00-\x1F\x7F]", " ")[..Math.Min(400, value.Length)];
+            throw new HttpRequestException(
+                $"Supabase Storage rechazo la carga (HTTP {(int)response.StatusCode}, codigo: {Clean(errorCode)}, detalle: {Clean(errorMessage)}).");
+        }
         return ReferencePrefix + ExtractKey(key);
     }
 
