@@ -45,6 +45,10 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
         sale.CompanyId = ObtenerEmpresaSegura();
         sale.UserId = ObtenerUsuarioSeguro();
         if (sale.SaleDetails == null || sale.SaleDetails.Count == 0) return BadRequest(new { error = "La venta no tiene artículos." });
+        if (sale.PaymentType == PaymentType.Cuotas &&
+            (string.IsNullOrWhiteSpace(sale.CustomerName) ||
+             sale.CustomerName.Trim().Equals("Público general", StringComparison.OrdinalIgnoreCase)))
+            return BadRequest(new { error = "Identifica al comprador para registrar una venta a cuotas." });
         var permitted = WritableInventories(sale.CompanyId, sale.UserId);
         foreach (var d in sale.SaleDetails)
         {
@@ -111,13 +115,18 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
 
         var readable = ReadableInventories(companyId, userId);
         var articleIds = sale.SaleDetails.Select(d => d.ArticleId).ToArray();
-        if (!await _db.Articles.AnyAsync(a => a.CompanyId == companyId &&
-            articleIds.Contains(a.Id) && readable.Contains(a.InventoryId)))
-            return Forbid();
+        // No exponer el crédito completo si solo se tiene acceso a uno de varios inventarios.
+        var accessibleCount = await _db.Articles.CountAsync(a => a.CompanyId == companyId &&
+            articleIds.Contains(a.Id) && readable.Contains(a.InventoryId));
+        if (accessibleCount != articleIds.Distinct().Count()) return Forbid();
+        if (sale.PaymentType != PaymentType.Cuotas)
+            return Conflict(new { error = "La venta no corresponde a una venta a cuotas." });
 
         var items = await _db.SaleInstallments.AsNoTracking().Include(x => x.Receipts)
             .Where(x => x.SaleId == id && x.CompanyId == companyId)
             .OrderBy(x => x.InstallmentNumber).ToListAsync();
+        if (items.Count == 0)
+            return Conflict(new { error = "No existe un cronograma en el nuevo sistema para esta venta. Comprueba si es un crédito histórico." });
         var cancelled = await _db.SaleCancellations.AnyAsync(x => x.CompanyId == companyId && x.SaleId == id);
         var today = SaleInstallmentCalculator.BusinessToday();
         return Ok(new
@@ -165,10 +174,14 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             return BadRequest(new { error = "Selecciona un método de abono válido y su billetera cuando corresponda." });
         if (paymentType == PaymentType.Cuotas)
             return BadRequest(new { error = "Un abono debe utilizar un método de pago efectivo, tarjeta, transferencia o billetera." });
+        if (request.Notes?.Length > 500)
+            return BadRequest(new { error = "La observación del abono no puede superar 500 caracteres." });
 
         var sale = await _db.Sales.Include(s => s.SaleDetails)
             .FirstOrDefaultAsync(s => s.Id == id && s.CompanyId == companyId);
         if (sale == null) return NotFound();
+        if (sale.PaymentType != PaymentType.Cuotas)
+            return Conflict(new { error = "La venta no corresponde a un crédito." });
         var writable = WritableInventories(companyId, userId);
         foreach (var detail in sale.SaleDetails)
             if (!await _db.Articles.AnyAsync(a => a.CompanyId == companyId &&
@@ -196,8 +209,17 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
         }
         if (await _db.SaleCancellations.AnyAsync(x => x.CompanyId == companyId && x.SaleId == id))
             return Conflict(new { error = "No se pueden abonar cuotas de una venta anulada." });
-        if (request.Amount > installment.InstallmentAmount - installment.PaidAmount)
-            return Conflict(new { error = "El abono supera el saldo pendiente de la cuota." });
+        var received = lockedSale.AmountReceived.GetValueOrDefault();
+        if (installment.PaidAmount < 0 || installment.PaidAmount > installment.InstallmentAmount)
+            return Conflict(new { error = "La cuota tiene un saldo incoherente. Requiere revisión." });
+        var recorded = await _db.SaleInstallmentReceipts.AsNoTracking()
+            .Where(p => p.CompanyId == companyId && p.SaleInstallmentId == installmentId)
+            .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+        if (recorded != installment.PaidAmount)
+            return Conflict(new { error = "Los abonos no cuadran con el saldo de la cuota. Requiere revisión." });
+        if (request.Amount > installment.InstallmentAmount - installment.PaidAmount ||
+            received + request.Amount > lockedSale.TotalAmount)
+            return Conflict(new { error = "El abono supera el saldo pendiente de la cuota o de la venta." });
 
         var receipt = new SaleInstallmentReceipt
         {
@@ -206,7 +228,7 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             Notes = request.Notes?.Trim(), OperationKey = request.OperationKey
         };
         installment.PaidAmount += request.Amount;
-        lockedSale.AmountReceived = lockedSale.AmountReceived.GetValueOrDefault() + request.Amount;
+        lockedSale.AmountReceived = received + request.Amount;
         _db.SaleInstallmentReceipts.Add(receipt);
         try
         {
@@ -359,10 +381,19 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             if (!await _db.Articles.AnyAsync(a => a.Id == detail.ArticleId && allowed.Contains(a.InventoryId))) return Forbid();
         if (await _db.SaleCancellations.AnyAsync(c => c.SaleId == id))
             return Conflict(new { error = "Venta ya anulada." });
-        if (await _db.SaleInstallments.AnyAsync(i => i.SaleId == id && i.CompanyId == companyId) &&
-            (sale.AmountReceived > 0m || await _db.SaleInstallmentReceipts.AnyAsync(p =>
-                p.CompanyId == companyId && _db.SaleInstallments.Any(i => i.Id == p.SaleInstallmentId && i.SaleId == id))))
-            return Conflict(new { error = "La venta a cuotas tiene cobros registrados. Gestiona los reembolsos antes de anularla." });
+        if (sale.PaymentType == PaymentType.Cuotas)
+        {
+            var schedule = await _db.SaleInstallments
+                .Where(i => i.SaleId == id && i.CompanyId == companyId).ToListAsync();
+            if (schedule.Count == 0)
+                return Conflict(new { error = "Crédito sin cronograma en el libro nuevo: requiere revisión antes de anular." });
+            var installmentIds = schedule.Select(i => i.Id).ToArray();
+            if (sale.AmountReceived.GetValueOrDefault() > 0 ||
+                schedule.Any(i => i.PaidAmount > 0) ||
+                await _db.SaleInstallmentReceipts.AnyAsync(p => p.CompanyId == companyId &&
+                    installmentIds.Contains(p.SaleInstallmentId)))
+                return Conflict(new { error = "La venta a cuotas tiene cobros registrados. Gestiona los reembolsos antes de anularla." });
+        }
         // Bloqueo de todas las filas de artículos en orden para evitar pérdidas de actualización.
         var keys = sale.SaleDetails.Select(d => d.ArticleId).Distinct().OrderBy(x => x).ToArray();
         foreach (var articleId in keys)
