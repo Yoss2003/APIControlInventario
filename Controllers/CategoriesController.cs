@@ -38,6 +38,7 @@ public sealed class CategoriesController(ICategoryService categoryService, AppDb
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetCategory(int id)
     {
+        if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
         var item = await categoryService.GetByIdAsync(id);
         if (item is null || item.CompanyId != CompanyId) return NotFound();
         var master = await Master();
