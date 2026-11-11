@@ -288,6 +288,13 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             $"SELECT * FROM \"Articles\" WHERE \"Id\" = {request.ArticleId} AND \"CompanyId\" = {companyId} FOR UPDATE")
             .SingleOrDefaultAsync();
         if (article == null || !article.IsActive) return NotFound(new { error = "Artículo inactivo o no encontrado." });
+        // La consulta anterior puede haber ocurrido antes del primer commit concurrente.
+        var committedPrior = await _db.SaleOperations.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.OperationKey == request.OperationKey);
+        if (committedPrior != null)
+            return committedPrior.CompanyId == companyId
+                ? Ok(new { saleId = committedPrior.SaleId, reused = true })
+                : Conflict(new { error = "La clave de operación pertenece a otra empresa." });
         if (!await WritableInventories(companyId, userId).ContainsAsync(article.InventoryId)) return Forbid();
         if (article.Stock < request.Quantity) return Conflict(new { error = "Stock insuficiente." });
         if (article.Tracking.ToString() == "Serialized" && request.Quantity != decimal.Truncate(request.Quantity))
@@ -352,8 +359,15 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             installment.CompanyId = companyId;
         }
         _db.SaleInstallments.AddRange(schedule);
-        await _db.SaveChangesAsync();
-        await tx.CommitAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+            await tx.CommitAsync();
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { error = "No se pudo confirmar la venta. Verifica si ya existe la clave de operación antes de reintentar." });
+        }
         return Ok(new
         {
             saleId = sale.Id, total, amountReceived = sale.AmountReceived,
