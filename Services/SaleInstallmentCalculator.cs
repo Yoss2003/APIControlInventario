@@ -4,6 +4,13 @@ namespace InventoryAPI.Services;
 
 public static class SaleInstallmentCalculator
 {
+    // El proyecto opera en Perú: evitar adelantar el día por utilizar UTC.
+    public static DateOnly BusinessToday()
+    {
+        var peru = TimeZoneInfo.FindSystemTimeZoneById("America/Lima");
+        return DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, peru));
+    }
+
     public static bool TryBuild(decimal total, SaleInstallmentPlanRequest? request, DateOnly today,
         out List<SaleInstallment> installments, out string error)
     {
