@@ -50,9 +50,10 @@ namespace InventoryAPI.Controllers
                 return NotFound(new { mensaje = "El usuario no existe o no pertenece a tu sucursal." });
 
             if (existingUser.RoleId == 1 || (existingUser.RoleId == 2 && !InventoryAccessPolicy.IsDeveloper(User))) return Forbid();
-            if (userActualizado.RoleId is 1 or 2 && !InventoryAccessPolicy.IsDeveloper(User)) return Forbid();
-            if (userActualizado.RoleId > 0 && !await db.Roles.AnyAsync(r => r.Id == userActualizado.RoleId))
-                return BadRequest(new { error = "Rol inválido." });
+            if (userActualizado.RoleId is 1 or 2) return Forbid();
+            if (userActualizado.RoleId > 0 &&
+                !await access.CanAssignRoleAsync(User, userActualizado.RoleId))
+                return Forbid();
             if (id == ObtenerUsuarioSeguro() && userActualizado.RoleId > 0 &&
                 userActualizado.RoleId != existingUser.RoleId)
                 return Conflict(new { error = "No puedes cambiar tu propio rol." });
@@ -72,8 +73,8 @@ namespace InventoryAPI.Controllers
         {
             if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
             if (user.RoleId is 1 or 2) return Conflict(new { error = "Usa Gestión Dev para registrar el administrador inicial. El rol desarrollador está protegido." });
-            if (user.RoleId <= 0 || !await db.Roles.AnyAsync(r => r.Id == user.RoleId))
-                return BadRequest(new { error = "Rol inválido." });
+            if (!await access.CanAssignRoleAsync(User, user.RoleId))
+                return Forbid();
             if (string.IsNullOrWhiteSpace(user.Password) || user.Password.Length < 12)
                 return BadRequest(new { error = "Se requiere una contraseña de al menos 12 caracteres." });
             user.CompanyId = ObtenerEmpresaSegura();
