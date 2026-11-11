@@ -105,6 +105,7 @@ namespace InventoryAPI.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetSupplier(int id)
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
             int companyId = ObtenerEmpresaSegura();
             var supplier = await _supplierService.GetByIdAsync(id);
 
