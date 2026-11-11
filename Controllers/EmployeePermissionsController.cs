@@ -23,7 +23,8 @@ namespace InventoryAPI.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> PutPermissions(int id, [FromBody] EmployeePermission permissions)
         {
-            if (!await policy.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+            if (!InventoryAccessPolicy.IsManager(User) ||
+                !await policy.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
             if (id != permissions.Id) return BadRequest();
 
             int companyId = ObtenerEmpresaSegura();
