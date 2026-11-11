@@ -240,7 +240,8 @@ using (var scope = app.Services.CreateScope())
                             COALESCE((SELECT MAX("Id") FROM "Permissions"), 0),
                             nextval(identity_sequence)
                         ), true);
-                END $permissions_seed$;
+                END;
+                $permissions_seed$;
                 """);
 
             var registeredCodes = context.Permissions
