@@ -1,4 +1,5 @@
 using InventoryAPI.Data;
+using InventoryAPI.Security;
 using InventoryAPI.Models;
 using InventoryAPI.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -9,11 +10,11 @@ namespace InventoryAPI.Controllers;
 /// <summary>
 /// Parámetros generales por empresa. Los secretos no se publican como catálogo.
 /// </summary>
-public sealed class ParametersController(AppDbContext db) : BaseApiController
+public sealed class ParametersController(AppDbContext db, InventoryAccessPolicy access) : BaseApiController
 {
     private int CompanyId => ObtenerEmpresaSegura();
     private int UserId => ObtenerUsuarioSeguro();
-    private bool CanManage => User.FindFirst("RoleId")?.Value is "1" or "2";
+    private Task<bool> CanManageMasterAsync() => access.HasAsync(User, InventoryPermissionCodes.ManageMaster);
     private bool IsDeveloper => User.FindFirst("RoleId")?.Value == "1";
 
     private static bool IsSecret(Parameters parameter)
@@ -50,6 +51,7 @@ public sealed class ParametersController(AppDbContext db) : BaseApiController
     {
         if (CompanyId != 1 || !IsDeveloper) return Forbid();
         if (string.IsNullOrWhiteSpace(newToken)) return BadRequest(new { error = "Token vacío." });
+        if (!await CanManageMasterAsync()) return Forbid();
         var master = await Master();
         if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
         var item = await db.Parameters.FirstOrDefaultAsync(p =>
@@ -70,6 +72,7 @@ public sealed class ParametersController(AppDbContext db) : BaseApiController
     [HttpGet]
     public async Task<IActionResult> GetParameters()
     {
+        if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
         var all = await db.Parameters.AsNoTracking().Where(p => p.CompanyId == CompanyId).ToListAsync();
         return Ok(all.Where(p => !IsSecret(p)).ToList());
     }
@@ -77,6 +80,7 @@ public sealed class ParametersController(AppDbContext db) : BaseApiController
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetParameter(int id)
     {
+        if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
         var item = await db.Parameters.AsNoTracking().FirstOrDefaultAsync(p =>
             p.Id == id && p.CompanyId == CompanyId);
         return item is null || IsSecret(item) ? NotFound() : Ok(item);
@@ -127,7 +131,7 @@ public sealed class ParametersController(AppDbContext db) : BaseApiController
     [HttpPut("{id:int}")]
     public async Task<IActionResult> PutParameter(int id, [FromBody] Parameters input)
     {
-        if (!CanManage) return Forbid();
+        if (!await CanManageMasterAsync()) return Forbid();
         if (id != input.Id || !ModelState.IsValid || IsSecret(input)) return BadRequest();
         var master = await Master();
         if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
@@ -152,7 +156,7 @@ public sealed class ParametersController(AppDbContext db) : BaseApiController
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteParameter(int id)
     {
-        if (!CanManage) return Forbid();
+        if (!await CanManageMasterAsync()) return Forbid();
         var master = await Master();
         if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
         var item = await db.Parameters.FirstOrDefaultAsync(p =>

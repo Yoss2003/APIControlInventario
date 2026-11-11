@@ -1,5 +1,6 @@
 using InventoryAPI.Models;
 using InventoryAPI.Data;
+using InventoryAPI.Security;
 using InventoryAPI.Services;
 using Npgsql;
 using InventoryAPI.Services.IServices;
@@ -8,10 +9,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace InventoryAPI.Controllers;
 
-public sealed class BrandsController(IBrandService brandService, AppDbContext db) : BaseApiController
+public sealed class BrandsController(IBrandService brandService, AppDbContext db, InventoryAccessPolicy access) : BaseApiController
 {
     private bool Developer => User.FindFirst("RoleId")?.Value == "1";
-    private bool CanManageMaster => User.FindFirst("RoleId")?.Value is "1" or "2";
+    private Task<bool> CanManageMasterAsync() => access.HasAsync(User, InventoryPermissionCodes.ManageMaster);
     private Task<Inventory?> Master() => db.Inventories
         .FirstOrDefaultAsync(i => i.CompanyId == CompanyId && i.IsMaster && i.IsActive);
     private int CompanyId => ObtenerEmpresaSegura();
@@ -24,6 +25,7 @@ public sealed class BrandsController(IBrandService brandService, AppDbContext db
     [HttpGet]
     public async Task<IActionResult> GetBrands()
     {
+        if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
         var allowed = await Available(false).ToListAsync();
         var brands = await brandService.GetAllByCompanyIdAsync(CompanyId);
         var master = await Master();
@@ -33,6 +35,7 @@ public sealed class BrandsController(IBrandService brandService, AppDbContext db
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetBrand(int id)
     {
+        if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
         var b = await brandService.GetByIdAsync(id);
         if (b is null || b.CompanyId != CompanyId) return NotFound();
         var master = await Master();
@@ -44,6 +47,7 @@ public sealed class BrandsController(IBrandService brandService, AppDbContext db
     {
         if (!ModelState.IsValid || string.IsNullOrWhiteSpace(brand.Name))
             return BadRequest(new { error = "Nombre de marca obligatorio." });
+        if (!await CanManageMasterAsync()) return Forbid();
         var master = await Master();
         if (master is null) return Conflict(new { error = "La empresa no tiene inventario maestro activo." });
         if (brand.InventoryId != master.Id &&
@@ -101,7 +105,7 @@ public sealed class BrandsController(IBrandService brandService, AppDbContext db
         if (id != brand.Id || !ModelState.IsValid) return BadRequest();
         var existing = await brandService.GetByIdAsync(id);
         if (existing is null || existing.CompanyId != CompanyId) return NotFound();
-        if (!CanManageMaster) return Forbid();
+        if (!await CanManageMasterAsync()) return Forbid();
         var master = await Master();
         if (existing.InventoryId != master?.Id &&
             !await Available(true).ContainsAsync(existing.InventoryId)) return Forbid();
@@ -118,7 +122,7 @@ public sealed class BrandsController(IBrandService brandService, AppDbContext db
     {
         var existing = await brandService.GetByIdAsync(id);
         if (existing is null || existing.CompanyId != CompanyId) return NotFound();
-        if (!CanManageMaster) return Forbid();
+        if (!await CanManageMasterAsync()) return Forbid();
         var master = await Master();
         if (existing.InventoryId != master?.Id &&
             !await Available(true).ContainsAsync(existing.InventoryId)) return Forbid();

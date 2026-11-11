@@ -1,12 +1,15 @@
 using InventoryAPI.Models;
 using InventoryAPI.Models.DTO;
+using InventoryAPI.Data;
+using InventoryAPI.Security;
+using Microsoft.EntityFrameworkCore;
 using InventoryAPI.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InventoryAPI.Controllers
 {
-    public class UsersController(IUserService userService, IWebHostEnvironment env, IFcmNotificationService fcmNotificationService, ICompanyLicenseService licenseService) : BaseApiController
+    public class UsersController(IUserService userService, IWebHostEnvironment env, IFcmNotificationService fcmNotificationService, ICompanyLicenseService licenseService, InventoryAccessPolicy access, AppDbContext db) : BaseApiController
     {
         private readonly IUserService _userService = userService;
         private readonly IWebHostEnvironment _env = env;
@@ -16,6 +19,7 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<UserDTO>>> GetUsers()
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
             int companyId = ObtenerEmpresaSegura();
             var users = await _userService.GetUsersDtoAsync();
             return Ok(users.Where(u => u.CompanyId == companyId).ToList());
@@ -24,6 +28,7 @@ namespace InventoryAPI.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<UserDTO>> GetUser(int id)
         {
+            if (id != ObtenerUsuarioSeguro() && !await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
             int companyId = ObtenerEmpresaSegura();
             var userDto = await _userService.GetUserDtoByIdAsync(id);
 
@@ -36,6 +41,7 @@ namespace InventoryAPI.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> PutUser(int id, [FromBody] User userActualizado)
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
             int companyId = ObtenerEmpresaSegura();
             userActualizado.CompanyId = companyId;
 
@@ -43,6 +49,15 @@ namespace InventoryAPI.Controllers
             if (existingUser == null || existingUser.CompanyId != companyId)
                 return NotFound(new { mensaje = "El usuario no existe o no pertenece a tu sucursal." });
 
+            if (existingUser.RoleId == 1 || (existingUser.RoleId == 2 && !InventoryAccessPolicy.IsDeveloper(User))) return Forbid();
+            if (userActualizado.RoleId is 1 or 2) return Forbid();
+            if (userActualizado.RoleId > 0 &&
+                !await access.CanAssignRoleAsync(User, userActualizado.RoleId))
+                return Forbid();
+            if (id == ObtenerUsuarioSeguro() && userActualizado.RoleId > 0 &&
+                userActualizado.RoleId != existingUser.RoleId)
+                return Conflict(new { error = "No puedes cambiar tu propio rol." });
+            userActualizado.Password = null; // Las contraseñas se cambian por un proceso separado.
             var (Success, Message) = await _userService.UpdateUserAsync(id, userActualizado);
             if (!Success)
             {
@@ -56,6 +71,12 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<User>> PostUser([FromBody] User user)
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+            if (user.RoleId is 1 or 2) return Conflict(new { error = "Usa Gestión Dev para registrar el administrador inicial. El rol desarrollador está protegido." });
+            if (!await access.CanAssignRoleAsync(User, user.RoleId))
+                return Forbid();
+            if (string.IsNullOrWhiteSpace(user.Password) || user.Password.Length < 12)
+                return BadRequest(new { error = "Se requiere una contraseña de al menos 12 caracteres." });
             user.CompanyId = ObtenerEmpresaSegura();
 
             int companyId = user.CompanyId.Value;
@@ -71,18 +92,26 @@ namespace InventoryAPI.Controllers
             var result = await _userService.CreateUserAsync(user, _env.ContentRootPath);
 
             if (!result.Success) return BadRequest(result.Data);
-            return CreatedAtAction(nameof(GetUser), new { id = ((User)result.Data).Id }, result.Data);
+            var created = (User)result.Data;
+            return CreatedAtAction(nameof(GetUser), new { id = created.Id },
+                new { created.Id, created.Username, created.Email, created.RoleId, created.CompanyId,
+                    personalInventoryProvisioned = true });
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteUser(int id)
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+            if (id == ObtenerUsuarioSeguro()) return Conflict(new { error = "No puedes desactivar tu propia cuenta." });
             int companyId = ObtenerEmpresaSegura();
             string deletedBy = ObtenerUsuarioSeguro().ToString();
 
             var existingUser = await _userService.GetUserDtoByIdAsync(id);
             if (existingUser == null || existingUser.CompanyId != companyId) return NotFound();
-
+            if (existingUser.RoleId == 1 || (existingUser.RoleId == 2 && !InventoryAccessPolicy.IsDeveloper(User))) return Forbid();
+            if (existingUser.RoleId == 2 &&
+                await db.Users.CountAsync(u => u.CompanyId == companyId && u.RoleId == 2 && u.IsActive) <= 1)
+                return Conflict(new { error = "No se puede desactivar el último administrador." });
             var success = await _userService.DeleteAsync(id, deletedBy);
             if (!success) return NotFound();
 
@@ -117,6 +146,7 @@ namespace InventoryAPI.Controllers
         [HttpPut("{id}/UpdatePhoto")]
         public async Task<IActionResult> UpdatePhoto(int id, [FromBody] PhotoUpdateDTO request)
         {
+            if (!await CanManageTargetAsync(id)) return Forbid();
             var result = await _userService.UpdatePhotoAsync(id, request.Base64Image, _env.ContentRootPath);
             if (!result.Success)
             {
@@ -130,6 +160,7 @@ namespace InventoryAPI.Controllers
         [HttpPost("{id}/generate-2fa")]
         public async Task<IActionResult> Generate2FA(int id)
         {
+            if (id != ObtenerUsuarioSeguro()) return Forbid();
             var (Success, Secret, QrUri) = await _userService.Generate2FAAsync(id);
             if (!Success) return NotFound();
             return Ok(new { secret = Secret, qrUri = QrUri });
@@ -138,6 +169,7 @@ namespace InventoryAPI.Controllers
         [HttpPost("{id}/enable-2fa")]
         public async Task<IActionResult> Enable2FA(int id, [FromBody] string code)
         {
+            if (id != ObtenerUsuarioSeguro()) return Forbid();
             bool success = await _userService.Enable2FAAsync(id, code);
             if (success) return Ok(new { mensaje = "Activado" });
             return BadRequest(new { mensaje = "Inválido" });
@@ -146,15 +178,16 @@ namespace InventoryAPI.Controllers
         [HttpPost("{id}/disable-2fa")]
         public async Task<IActionResult> Disable2FA(int id)
         {
+            if (id != ObtenerUsuarioSeguro()) return Forbid();
             bool success = await _userService.Disable2FAAsync(id);
             if (!success) return NotFound();
             return Ok(new { mensaje = "Desactivado" });
         }
 
         [HttpPost("TestEmailConfiguration")]
-        [AllowAnonymous]
         public async Task<IActionResult> TestEmailConfiguration([FromBody] SmtpTestRequest request)
         {
+            if (!InventoryAccessPolicy.IsDeveloper(User)) return Forbid();
             if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
                 return BadRequest(new { mensaje = "El correo y la contraseña son obligatorios." });
 
@@ -164,68 +197,30 @@ namespace InventoryAPI.Controllers
             return Ok(new { mensaje = Message });
         }
 
-        [HttpGet("ApproveAccount/{id}")]
+        // Los antiguos enlaces GET de aprobación por ID eran falsificables.
+        // No permitir una transición de estado por un enlace público.
+        [HttpGet("ApproveAccount/{id:int}")]
         [AllowAnonymous]
-        public async Task<IActionResult> ApproveAccountFromEmail(int id)
+        public IActionResult LegacyApproveDisabled(int id) => StatusCode(410,
+            new { error = "La aprobación por enlace público ha sido retirada. Usa Gestión de usuarios." });
+
+        [HttpPost("ApproveAccount/{id:int}")]
+        public async Task<IActionResult> ApproveEmployee(int id)
         {
-            var (Success, Message) = await _userService.ApproveEmployeeAsync(id);
-
-            string colorBase, colorFondo, icono, titulo, mensaje;
-            if (Success)
-            {
-                colorBase = "#10B981"; colorFondo = "#ECFDF5";
-                icono = @"<svg class='icon' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>";
-                titulo = "Cuenta Aprobada"; mensaje = Message;
-            }
-            else if (Message.Contains("ya había sido aprobado"))
-            {
-                colorBase = "#F59E0B"; colorFondo = "#FFFBEB";
-                icono = @"<svg class='icon' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>";
-                titulo = "Acción Completada"; mensaje = Message;
-            }
-            else
-            {
-                colorBase = "#EF4444"; colorFondo = "#FEF2F2";
-                icono = @"<svg class='icon' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z'></path></svg>";
-                titulo = "Acceso Denegado"; mensaje = Message;
-            }
-
-            string htmlResponse = $@"
-            <!DOCTYPE html>
-            <html lang='es'>
-            <head>
-                <meta charset='UTF-8'>
-                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-                <title>{titulo} - Control Inventario</title>
-                <style>
-                    body {{ margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #F3F4F6; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }}
-                    .card {{ background-color: #FFFFFF; border-radius: 16px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); max-width: 420px; width: 90%; padding: 40px 30px; text-align: center; border-top: 6px solid {colorBase}; }}
-                    .icon-container {{ background-color: {colorFondo}; color: {colorBase}; width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px auto; }}
-                    .icon {{ width: 40px; height: 40px; }}
-                    h1 {{ color: #111827; font-size: 24px; font-weight: 700; margin: 0 0 16px 0; }}
-                    p.message {{ color: #4B5563; font-size: 16px; line-height: 1.5; margin: 0 0 32px 0; }}
-                    p.footer {{ color: #9CA3AF; font-size: 13px; margin: 0; border-top: 1px solid #E5E7EB; padding-top: 20px; }}
-                </style>
-            </head>
-            <body>
-                <div class='card'>
-                    <div class='icon-container'>{icono}</div>
-                    <h1>{titulo}</h1>
-                    <p class='message'>{mensaje}</p>
-                    <p class='footer'>Esta pestaña puede ser cerrada de forma segura.</p>
-                </div>
-            </body>
-            </html>";
-
-            Response.ContentType = "text/html; charset=utf-8";
-            await Response.WriteAsync(htmlResponse);
-            return new EmptyResult();
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+            var target = await db.Users.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == ObtenerEmpresaSegura());
+            if (target is null) return NotFound();
+            if (target.RoleId == 1 ||
+                (target.RoleId == 2 && !InventoryAccessPolicy.IsDeveloper(User))) return Forbid();
+            var (success, message) = await _userService.ApproveEmployeeAsync(id);
+            return success ? Ok(new { message }) : Conflict(new { error = message });
         }
 
         [HttpPut("{id}/fcm-token")]
-        [AllowAnonymous]
         public async Task<IActionResult> UpdateFcmToken(int id, [FromBody] string fcmToken)
         {
+            if (id != ObtenerUsuarioSeguro()) return Forbid();
             if (string.IsNullOrWhiteSpace(fcmToken))
                 return BadRequest(new { mensaje = "El token no puede estar vacío." });
 
@@ -237,10 +232,10 @@ namespace InventoryAPI.Controllers
             return NotFound(new { mensaje = "Usuario no encontrado." });
         }
 
-        [AllowAnonymous]
         [HttpPost("test-push")]
         public async Task<IActionResult> TestPushNotification([FromBody] string fcmToken)
         {
+            if (!InventoryAccessPolicy.IsDeveloper(User)) return Forbid();
             var path = Path.Combine(_env.ContentRootPath, "firebase-key.json");
             if (!System.IO.File.Exists(path))
                 return StatusCode(500, new { mensaje = $"🔥 ERROR 1: Somee NO encuentra el archivo clave. Ruta buscada: {path}" });
@@ -269,11 +264,21 @@ namespace InventoryAPI.Controllers
         [HttpPost("{id}/resend-welcome")]
         public async Task<IActionResult> ResendWelcomeEmail(int id)
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers) ||
+                !await CanManageTargetAsync(id)) return Forbid();
             var (Success, Message) = await _userService.ResendWelcomeEmailAsync(id);
 
             if (!Success) return BadRequest(new { mensaje = Message });
 
             return Ok(new { mensaje = Message });
+        }
+
+        private async Task<bool> CanManageTargetAsync(int id)
+        {
+            if (!await db.Users.AnyAsync(u => u.Id == id && u.CompanyId == ObtenerEmpresaSegura()))
+                return false;
+            return id == ObtenerUsuarioSeguro() ||
+                await access.HasAsync(User, InventoryPermissionCodes.ManageUsers);
         }
 
         public class SmtpTestRequest

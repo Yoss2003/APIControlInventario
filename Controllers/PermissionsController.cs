@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using InventoryAPI.Services.IServices;
+using InventoryAPI.Security;
 
 namespace InventoryAPI.Controllers
 {
@@ -10,6 +11,7 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetPermissions()
         {
+            if (!InventoryAccessPolicy.IsDeveloper(User)) return Forbid();
             var permissions = await _permissionService.GetAllAsync();
             return Ok(permissions);
         }

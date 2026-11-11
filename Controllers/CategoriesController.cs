@@ -1,5 +1,6 @@
 using InventoryAPI.Models;
 using InventoryAPI.Data;
+using InventoryAPI.Security;
 using InventoryAPI.Services;
 using Npgsql;
 using InventoryAPI.Services.IServices;
@@ -8,12 +9,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace InventoryAPI.Controllers;
 
-public sealed class CategoriesController(ICategoryService categoryService, AppDbContext db) : BaseApiController
+public sealed class CategoriesController(ICategoryService categoryService, AppDbContext db, InventoryAccessPolicy access) : BaseApiController
 {
     private int CompanyId => ObtenerEmpresaSegura();
     private int UserId => ObtenerUsuarioSeguro();
     private bool Developer => User.FindFirst("RoleId")?.Value == "1";
-    private bool CanManageMaster => User.FindFirst("RoleId")?.Value is "1" or "2";
+    private Task<bool> CanManageMasterAsync() => access.HasAsync(User, InventoryPermissionCodes.ManageMaster);
     private Task<Inventory?> Master() => db.Inventories
         .FirstOrDefaultAsync(i => i.CompanyId == CompanyId && i.IsMaster && i.IsActive);
     private IQueryable<int> Allowed(bool edit) => db.Inventories.Where(i => i.CompanyId == CompanyId &&
@@ -27,6 +28,7 @@ public sealed class CategoriesController(ICategoryService categoryService, AppDb
     [HttpGet]
     public async Task<IActionResult> GetCategories()
     {
+        if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
         var ids = await Allowed(false).ToListAsync();
         var items = await categoryService.GetAllByCompanyIdAsync(CompanyId);
         var master = await Master();
@@ -36,6 +38,7 @@ public sealed class CategoriesController(ICategoryService categoryService, AppDb
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetCategory(int id)
     {
+        if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
         var item = await categoryService.GetByIdAsync(id);
         if (item is null || item.CompanyId != CompanyId) return NotFound();
         var master = await Master();
@@ -46,6 +49,7 @@ public sealed class CategoriesController(ICategoryService categoryService, AppDb
     public async Task<IActionResult> PostCategory([FromBody] Category category, [FromQuery] bool allowSimilar = false)
     {
         if (!ModelState.IsValid || string.IsNullOrWhiteSpace(category.Name)) return BadRequest(ModelState);
+        if (!await CanManageMasterAsync()) return Forbid();
         var master = await Master();
         if (master is null) return Conflict(new { error = "La empresa no tiene inventario maestro activo." });
         if (category.InventoryId != master.Id &&
@@ -115,7 +119,7 @@ public sealed class CategoriesController(ICategoryService categoryService, AppDb
         if (id != category.Id || !ModelState.IsValid) return BadRequest(ModelState);
         var old = await categoryService.GetByIdAsync(id);
         if (old is null || old.CompanyId != CompanyId) return NotFound();
-        if (!CanManageMaster) return Forbid();
+        if (!await CanManageMasterAsync()) return Forbid();
         var master = await Master();
         if (old.InventoryId != master?.Id &&
             !await Allowed(true).ContainsAsync(old.InventoryId)) return Forbid();
@@ -136,7 +140,7 @@ public sealed class CategoriesController(ICategoryService categoryService, AppDb
     {
         var item = await categoryService.GetByIdAsync(id);
         if (item is null || item.CompanyId != CompanyId) return NotFound();
-        if (!CanManageMaster) return Forbid();
+        if (!await CanManageMasterAsync()) return Forbid();
         var master = await Master();
         if (item.InventoryId != master?.Id &&
             !await Allowed(true).ContainsAsync(item.InventoryId)) return Forbid();

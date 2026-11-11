@@ -4,6 +4,7 @@ using InventoryAPI.Repositories;
 using InventoryAPI.Repositories.IRepositories;
 using InventoryAPI.Services;
 using InventoryAPI.Services.IServices;
+using InventoryAPI.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -82,6 +83,8 @@ builder.Services.AddScoped<IThemeService, ThemeService>();
 builder.Services.AddScoped<ITimeZoneItemService, TimeZoneItemService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ICompanyLicenseService, CompanyLicenseService>();
+builder.Services.AddScoped<InventoryAccessPolicy>();
+builder.Services.AddScoped<ManagedUserRegistration>();
 
 builder.Services.AddScoped<IRolePermissionService, RolePermissionService>();
 builder.Services.AddScoped<ICategoryMeasurementUnitService, CategoryMeasurementUnitService>();
@@ -212,6 +215,16 @@ using (var scope = app.Services.CreateScope())
         // Idempotente: aprovisiona el maestro y el inventario personal
         // para empresas/usuarios anteriores a la Fase 3.5 (incluido YosMG).
         InventoryProvisioner.EnsureExistingAsync(context).GetAwaiter().GetResult();
+
+        // Catálogo de permisos compatible con registros existentes; no se alteran
+        // permisos ya asignados a los roles.
+        var registeredCodes = context.Permissions.Select(x => x.SystemCode).ToHashSet();
+        foreach (var (code, label) in InventoryPermissionCodes.Definitions)
+        {
+            if (!registeredCodes.Contains(code))
+                context.Permissions.Add(new Permission { SystemCode = code, Name = label });
+        }
+        context.SaveChanges();
     }
     catch (Exception ex)
     {

@@ -2,6 +2,7 @@
 using InventoryAPI.Services.IServices;
 using InventoryAPI.Models;
 using InventoryAPI.Data;
+using InventoryAPI.Security;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System.Text.RegularExpressions;
@@ -9,7 +10,7 @@ using System.Text.Json;
 
 namespace InventoryAPI.Controllers
 {
-    public class SuppliersController(ISupplierService supplierService, AppDbContext db) : BaseApiController
+    public class SuppliersController(ISupplierService supplierService, AppDbContext db, InventoryAccessPolicy access) : BaseApiController
     {
         private readonly ISupplierService _supplierService = supplierService;
         private static readonly HashSet<string> AllowedFiscalKeys = new(StringComparer.Ordinal)
@@ -51,7 +52,7 @@ namespace InventoryAPI.Controllers
         }
 
 
-        private bool CanManageMaster => User.FindFirst("RoleId")?.Value is "1" or "2";
+        private Task<bool> CanManageMasterAsync() => access.HasAsync(User, InventoryPermissionCodes.ManageMaster);
         private Task<Inventory?> Master(int company) => db.Inventories
             .FirstOrDefaultAsync(i => i.CompanyId == company && i.IsMaster && i.IsActive);
         private Task<bool> MayCreate(int company, int inventory)
@@ -96,6 +97,7 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<IActionResult> GetSuppliers()
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
             int companyId = ObtenerEmpresaSegura();
             return Ok(await _supplierService.GetAllByCompanyIdAsync(companyId));
         }
@@ -103,6 +105,7 @@ namespace InventoryAPI.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetSupplier(int id)
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
             int companyId = ObtenerEmpresaSegura();
             var supplier = await _supplierService.GetByIdAsync(id);
 
@@ -114,7 +117,7 @@ namespace InventoryAPI.Controllers
         public async Task<IActionResult> PutSupplier(int id, [FromBody] Supplier supplier)
         {
             if (id != supplier.Id || !ModelState.IsValid) return BadRequest(ModelState);
-            if (!CanManageMaster) return Forbid();
+            if (!await CanManageMasterAsync()) return Forbid();
             var company = ObtenerEmpresaSegura();
             var master = await Master(company);
             if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
@@ -152,6 +155,7 @@ namespace InventoryAPI.Controllers
         {
             if (!ModelState.IsValid || !Regex.IsMatch(supplier.Ruc ?? "", @"^\d{11}$"))
                 return BadRequest(new { error = "El proveedor necesita un RUC válido de 11 dígitos." });
+        if (!await CanManageMasterAsync()) return Forbid();
             int company = ObtenerEmpresaSegura();
             var master = await Master(company);
             if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
@@ -194,7 +198,7 @@ namespace InventoryAPI.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteSupplier(int id)
         {
-            if (!CanManageMaster) return Forbid();
+            if (!await CanManageMasterAsync()) return Forbid();
             int company = ObtenerEmpresaSegura();
             var master = await Master(company);
             if (master is null) return Conflict(new { error = "Inventario maestro no encontrado." });
