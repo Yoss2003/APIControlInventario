@@ -225,9 +225,9 @@ using (var scope = app.Services.CreateScope())
         using (var permissionsTx = context.Database.BeginTransaction())
         {
             context.Database.ExecuteSqlRaw(
-                "LOCK TABLE \\"Permissions\\" IN SHARE ROW EXCLUSIVE MODE;");
+                @"LOCK TABLE ""Permissions"" IN SHARE ROW EXCLUSIVE MODE;");
             context.Database.ExecuteSqlRaw("""
-                DO $
+                DO $permissions_seed$
                 DECLARE identity_sequence regclass;
                 BEGIN
                     identity_sequence := pg_get_serial_sequence('"Permissions"', 'Id')::regclass;
@@ -240,7 +240,7 @@ using (var scope = app.Services.CreateScope())
                             COALESCE((SELECT MAX("Id") FROM "Permissions"), 0),
                             nextval(identity_sequence)
                         ), true);
-                END $;
+                END $permissions_seed$;
                 """);
 
             var registeredCodes = context.Permissions
