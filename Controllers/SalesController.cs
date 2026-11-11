@@ -87,7 +87,7 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
     public IActionResult SimulateInstallments([FromBody] InstallmentSimulationRequest request)
     {
         if (!SaleInstallmentCalculator.TryBuild(request.TotalAmount, request.InstallmentPlan,
-            DateOnly.FromDateTime(DateTime.UtcNow), out var items, out var error))
+            SaleInstallmentCalculator.BusinessToday(), out var items, out var error))
             return BadRequest(new { error });
         return Ok(new
         {
@@ -108,15 +108,16 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
         if (sale == null) return NotFound();
 
         var readable = ReadableInventories(companyId, userId);
+        var articleIds = sale.SaleDetails.Select(d => d.ArticleId).ToArray();
         if (!await _db.Articles.AnyAsync(a => a.CompanyId == companyId &&
-            sale.SaleDetails.Select(d => d.ArticleId).Contains(a.Id) && readable.Contains(a.InventoryId)))
+            articleIds.Contains(a.Id) && readable.Contains(a.InventoryId)))
             return Forbid();
 
         var items = await _db.SaleInstallments.AsNoTracking().Include(x => x.Receipts)
             .Where(x => x.SaleId == id && x.CompanyId == companyId)
             .OrderBy(x => x.InstallmentNumber).ToListAsync();
         var cancelled = await _db.SaleCancellations.AnyAsync(x => x.CompanyId == companyId && x.SaleId == id);
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = SaleInstallmentCalculator.BusinessToday();
         return Ok(new
         {
             saleId = id,
