@@ -173,6 +173,10 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
                 return Forbid();
 
         await using var tx = await _db.Database.BeginTransactionAsync();
+        // Bloquear primero la venta: la anulación utiliza la misma fila de exclusión.
+        await _db.Sales.FromSqlInterpolated(
+            $"SELECT * FROM \"Sales\" WHERE \"Id\" = {id} AND \"CompanyId\" = {companyId} FOR UPDATE")
+            .SingleAsync();
         var installment = await _db.SaleInstallments.FromSqlInterpolated(
             $"SELECT * FROM \"SaleInstallments\" WHERE \"Id\" = {installmentId} AND \"SaleId\" = {id} AND \"CompanyId\" = {companyId} FOR UPDATE")
             .SingleOrDefaultAsync();
@@ -304,6 +308,11 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
         if (companyId <= 0 || userId <= 0) return Unauthorized();
         if (string.IsNullOrWhiteSpace(request.Reason)) return BadRequest(new { error = "Escribe un motivo." });
         await using var tx = await _db.Database.BeginTransactionAsync();
+        // Sincronizar anulación con los abonos para no cancelar ventas ya cobradas.
+        var lockedSale = await _db.Sales.FromSqlInterpolated(
+            $"SELECT * FROM \"Sales\" WHERE \"Id\" = {id} AND \"CompanyId\" = {companyId} FOR UPDATE")
+            .SingleOrDefaultAsync();
+        if (lockedSale == null) return NotFound();
         var sale = await _db.Sales.Include(x => x.SaleDetails)
             .FirstOrDefaultAsync(s => s.Id == id && s.CompanyId == companyId);
         if (sale == null) return NotFound();
