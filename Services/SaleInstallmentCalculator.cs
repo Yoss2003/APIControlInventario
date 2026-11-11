@@ -28,9 +28,9 @@ public static class SaleInstallmentCalculator
             error = "El total debe ser positivo y la cuota inicial debe ser menor al total (máximo dos decimales).";
             return false;
         }
-        if (request.InstallmentCount is < 1 or > 120)
+        if (request.InstallmentCount is < 2 or > 120)
         {
-            error = "El número de cuotas debe estar entre 1 y 120.";
+            error = "El número de cuotas debe estar entre 2 y 120.";
             return false;
         }
 
