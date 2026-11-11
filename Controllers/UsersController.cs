@@ -145,6 +145,7 @@ namespace InventoryAPI.Controllers
         [HttpPut("{id}/UpdatePhoto")]
         public async Task<IActionResult> UpdatePhoto(int id, [FromBody] PhotoUpdateDTO request)
         {
+            if (!await CanManageTargetAsync(id)) return Forbid();
             var result = await _userService.UpdatePhotoAsync(id, request.Base64Image, _env.ContentRootPath);
             if (!result.Success)
             {
@@ -158,6 +159,7 @@ namespace InventoryAPI.Controllers
         [HttpPost("{id}/generate-2fa")]
         public async Task<IActionResult> Generate2FA(int id)
         {
+            if (id != ObtenerUsuarioSeguro()) return Forbid();
             var (Success, Secret, QrUri) = await _userService.Generate2FAAsync(id);
             if (!Success) return NotFound();
             return Ok(new { secret = Secret, qrUri = QrUri });
@@ -166,6 +168,7 @@ namespace InventoryAPI.Controllers
         [HttpPost("{id}/enable-2fa")]
         public async Task<IActionResult> Enable2FA(int id, [FromBody] string code)
         {
+            if (id != ObtenerUsuarioSeguro()) return Forbid();
             bool success = await _userService.Enable2FAAsync(id, code);
             if (success) return Ok(new { mensaje = "Activado" });
             return BadRequest(new { mensaje = "Inválido" });
@@ -174,15 +177,16 @@ namespace InventoryAPI.Controllers
         [HttpPost("{id}/disable-2fa")]
         public async Task<IActionResult> Disable2FA(int id)
         {
+            if (id != ObtenerUsuarioSeguro()) return Forbid();
             bool success = await _userService.Disable2FAAsync(id);
             if (!success) return NotFound();
             return Ok(new { mensaje = "Desactivado" });
         }
 
         [HttpPost("TestEmailConfiguration")]
-        [AllowAnonymous]
         public async Task<IActionResult> TestEmailConfiguration([FromBody] SmtpTestRequest request)
         {
+            if (!InventoryAccessPolicy.IsDeveloper(User)) return Forbid();
             if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
                 return BadRequest(new { mensaje = "El correo y la contraseña son obligatorios." });
 
@@ -265,10 +269,10 @@ namespace InventoryAPI.Controllers
             return NotFound(new { mensaje = "Usuario no encontrado." });
         }
 
-        [AllowAnonymous]
         [HttpPost("test-push")]
         public async Task<IActionResult> TestPushNotification([FromBody] string fcmToken)
         {
+            if (!InventoryAccessPolicy.IsDeveloper(User)) return Forbid();
             var path = Path.Combine(_env.ContentRootPath, "firebase-key.json");
             if (!System.IO.File.Exists(path))
                 return StatusCode(500, new { mensaje = $"🔥 ERROR 1: Somee NO encuentra el archivo clave. Ruta buscada: {path}" });
@@ -297,11 +301,21 @@ namespace InventoryAPI.Controllers
         [HttpPost("{id}/resend-welcome")]
         public async Task<IActionResult> ResendWelcomeEmail(int id)
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers) ||
+                !await CanManageTargetAsync(id)) return Forbid();
             var (Success, Message) = await _userService.ResendWelcomeEmailAsync(id);
 
             if (!Success) return BadRequest(new { mensaje = Message });
 
             return Ok(new { mensaje = Message });
+        }
+
+        private async Task<bool> CanManageTargetAsync(int id)
+        {
+            if (!await db.Users.AnyAsync(u => u.Id == id && u.CompanyId == ObtenerEmpresaSegura()))
+                return false;
+            return id == ObtenerUsuarioSeguro() ||
+                await access.HasAsync(User, InventoryPermissionCodes.ManageUsers);
         }
 
         public class SmtpTestRequest
