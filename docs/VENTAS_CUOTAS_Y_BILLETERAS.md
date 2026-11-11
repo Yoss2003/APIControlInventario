@@ -41,7 +41,30 @@ La API resuelve el `PaymentType` definitivo a Yape (2). `digitalWallet` es oblig
 
 `firstDueDate` es opcional (yyyy-MM-dd); por defecto se calcula a partir de la fecha de Perú: mañana/7 días/1 mes. Las cuotas dividen `totalAmount-downPayment` en céntimos exactos. Se permite entre 1 y 120 cuotas, montos positivos, dos decimales y cuota inicial menor al total. No se aceptan intereses implícitos.
 
-La creación de venta, los movimientos de stock y los registros de cuotas son atómicos en una transacción. La cuota inicial se guarda en `Sale.AmountReceived`. Las cuotas se guardan en `SaleInstallments` y sus abonos en `SaleInstallmentReceipts`. Los módulos heredados de `AccountsReceivables` e `InstallmentPayments` no se modifican.
+La creación de venta, los movimientos de stock y los registros de cuotas son atómicos en una transacción. La cuota inicial se guarda en `Sale.AmountReceived`, que después acumula los abonos confirmados. Las cuotas se guardan en `SaleInstallments` y sus abonos en `SaleInstallmentReceipts`. Los módulos heredados de `AccountsReceivables` e `InstallmentPayments` no se modifican.
+
+## Venta a cuotas desde el POS rápido
+
+`POST /api/Sales/quick` también admite el cronograma. Conserva su `operationKey` para impedir ventas duplicadas y permite artículos serializados con `detailIds`:
+
+```json
+{
+  "articleId": 1,
+  "quantity": 1,
+  "unitPrice": 120,
+  "customerName": "Cliente identificado",
+  "paymentMethod": "Cuotas",
+  "notes": "Crédito",
+  "operationKey": "9ff41924-5c8c-46aa-8ab1-ccfd6b87b64b",
+  "detailIds": [],
+  "installmentFrequency": "Mensual",
+  "installmentCount": 3,
+  "downPayment": 30,
+  "firstDueDate": "2026-12-10"
+}
+```
+
+El campo `firstDueDate` es opcional. Para `Cuotas` es necesario identificar al cliente. La venta rápida y el endpoint general comparten el cálculo del cronograma y registran las cuotas con la misma transacción de stock.
 
 ## Simulación antes de guardar
 
@@ -86,7 +109,7 @@ Devuelve `totalAmount`, `downPayment`, `financedAmount`, `balance`, `cancelled` 
 
 La anulación de una venta a cuotas con cuota inicial o abonos ya registrados devuelve `409 Conflict` hasta que exista un proceso explícito de reembolso. Una venta a cuotas todavía sin cobros puede anularse y su cronograma queda visible como `Cancelled`.
 
-Por integridad, `POST /api/Sales/quick` rechaza `Cuotas`; usa `POST /api/Sales` con `installmentPlan`.
+Los dos endpoints de venta aceptan `Cuotas` cuando incluyen una configuración de financiamiento válida; `quick` utiliza los campos `installmentCount`, `downPayment` e `installmentFrequency`, mientras `POST /api/Sales` utiliza `installmentPlan`.
 
 La migración `20261111043000_SaleInstallmentLedger` crea dos tablas nuevas y sus índices. El arranque actual de la API ejecuta `Database.Migrate()`, por lo que la migración se aplicará al iniciar el código después del despliegue: hacer copia de seguridad de PostgreSQL previamente.
 
