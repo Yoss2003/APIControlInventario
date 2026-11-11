@@ -1,4 +1,6 @@
 ﻿using InventoryAPI.Models.Interfaces;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace InventoryAPI.Models
 {
@@ -29,6 +31,12 @@ namespace InventoryAPI.Models
         public decimal? AmountReceived { get; set; }
         public decimal? ChangeGiven { get; set; }
         public int CompanyId { get; set; }
+
+        // Campos de entrada; conservan intacto el contrato y esquema histórico de Sale.
+        [NotMapped] public string? PaymentGroup { get; set; }
+        [NotMapped] public string? DigitalWallet { get; set; }
+        [NotMapped] public SaleInstallmentPlanRequest? InstallmentPlan { get; set; }
+        [JsonIgnore] public List<SaleInstallment> Installments { get; set; } = [];
         public List<SaleDetail> SaleDetails { get; set; } = new List<SaleDetail>();
     }
 }

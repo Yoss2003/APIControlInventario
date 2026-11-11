@@ -1604,6 +1604,96 @@ namespace InventoryAPI.Migrations
                     b.ToTable("SaleDetails");
                 });
 
+
+            modelBuilder.Entity("InventoryAPI.Models.SaleInstallment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Frequency")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<decimal>("InstallmentAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int>("InstallmentNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("PaidAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int>("SaleId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "DueDate");
+
+                    b.HasIndex("SaleId", "InstallmentNumber")
+                        .IsUnique();
+
+                    b.ToTable("SaleInstallments");
+                });
+
+            modelBuilder.Entity("InventoryAPI.Models.SaleInstallmentReceipt", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid>("OperationKey")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("PaidAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("PaymentType")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ReceivedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SaleInstallmentId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "SaleInstallmentId");
+
+                    b.HasIndex("OperationKey")
+                        .IsUnique();
+
+                    b.HasIndex("SaleInstallmentId");
+
+                    b.ToTable("SaleInstallmentReceipts");
+                });
+
             modelBuilder.Entity("InventoryAPI.Models.SaleOperation", b =>
                 {
                     b.Property<int>("Id")
@@ -2047,6 +2137,29 @@ namespace InventoryAPI.Migrations
                     b.Navigation("User");
                 });
 
+
+            modelBuilder.Entity("InventoryAPI.Models.SaleInstallment", b =>
+                {
+                    b.HasOne("InventoryAPI.Models.Sale", "Sale")
+                        .WithMany("Installments")
+                        .HasForeignKey("SaleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Sale");
+                });
+
+            modelBuilder.Entity("InventoryAPI.Models.SaleInstallmentReceipt", b =>
+                {
+                    b.HasOne("InventoryAPI.Models.SaleInstallment", "SaleInstallment")
+                        .WithMany("Receipts")
+                        .HasForeignKey("SaleInstallmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("SaleInstallment");
+                });
+
             modelBuilder.Entity("InventoryAPI.Models.SaleDetail", b =>
                 {
                     b.HasOne("InventoryAPI.Models.Sale", "Sale")
@@ -2126,7 +2239,14 @@ namespace InventoryAPI.Migrations
 
             modelBuilder.Entity("InventoryAPI.Models.Sale", b =>
                 {
+                    b.Navigation("Installments");
+
                     b.Navigation("SaleDetails");
+                });
+
+            modelBuilder.Entity("InventoryAPI.Models.SaleInstallment", b =>
+                {
+                    b.Navigation("Receipts");
                 });
 
             modelBuilder.Entity("InventoryAPI.Models.User", b =>
