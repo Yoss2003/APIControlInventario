@@ -5,15 +5,14 @@ namespace InventoryAPI.Models.DTO;
 /// <summary>Alta administrada, nunca enlaza propiedades privilegiadas del modelo User.</summary>
 public sealed class ManagedUserInput
 {
-    [Required, StringLength(80, MinimumLength = 3)]
-    public string Username { get; set; } = string.Empty;
+    // La API genera el nombre con la regla del proyecto MAUI.
+    // El texto enviado por el navegador es una sugerencia sin autoridad.
+    public string? Username { get; set; }
 
     [Required, EmailAddress, MaxLength(254)]
     public string Email { get; set; } = string.Empty;
 
-    [Required, MinLength(12), MaxLength(128)]
-    public string InitialPassword { get; set; } = string.Empty;
-
+    // Las credenciales temporales se generan exclusivamente en el servidor.
     [Required, MaxLength(100)]
     public string FirstName { get; set; } = string.Empty;
 
