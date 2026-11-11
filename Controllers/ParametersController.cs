@@ -80,6 +80,7 @@ public sealed class ParametersController(AppDbContext db, InventoryAccessPolicy 
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetParameter(int id)
     {
+        if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
         var item = await db.Parameters.AsNoTracking().FirstOrDefaultAsync(p =>
             p.Id == id && p.CompanyId == CompanyId);
         return item is null || IsSecret(item) ? NotFound() : Ok(item);
