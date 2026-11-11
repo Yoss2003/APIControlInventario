@@ -35,6 +35,7 @@ public sealed class BrandsController(IBrandService brandService, AppDbContext db
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetBrand(int id)
     {
+        if (!await access.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
         var b = await brandService.GetByIdAsync(id);
         if (b is null || b.CompanyId != CompanyId) return NotFound();
         var master = await Master();
