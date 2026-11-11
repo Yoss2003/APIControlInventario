@@ -24,7 +24,7 @@ namespace InventoryAPI.Controllers
         public async Task<IActionResult> UpdateRolePermissions(int id, [FromBody] List<int> permissionIds)
         {
             if (!InventoryAccessPolicy.IsDeveloper(User)) return Forbid();
-            if (id is 1 or 2) return Conflict(new { error = "Los roles reservados de desarrollador y administrador no se editan desde permisos." });
+            if (id == 1) return Conflict(new { error = "El rol de desarrollador es fijo y no puede editarse." });
             if (permissionIds is null || permissionIds.Distinct().Count() != permissionIds.Count)
                 return BadRequest(new { error = "Permisos duplicados o inválidos." });
             var (Success, Message) = await _roleService.UpdateRolePermissionsAsync(id, permissionIds);
