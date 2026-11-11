@@ -33,6 +33,8 @@ namespace InventoryAPI.Data
         public DbSet<InstallmentPayment> InstallmentPayments { get; set; }
         public DbSet<Sale> Sales { get; set; }
         public DbSet<SaleDetail> SaleDetails { get; set; }
+        public DbSet<SaleInstallment> SaleInstallments { get; set; }
+        public DbSet<SaleInstallmentReceipt> SaleInstallmentReceipts { get; set; }
         public DbSet<SecurityQuestion> SecurityQuestions { get; set; }
         public DbSet<RecoveryAttempt> RecoveryAttempts { get; set; }
         public DbSet<HistoryLog> HistoryLogs { get; set; }
@@ -106,6 +108,24 @@ namespace InventoryAPI.Data
                 e.HasOne<Inventory>().WithMany().HasForeignKey(x => x.InventoryId).OnDelete(DeleteBehavior.Restrict);
                 e.HasOne<Article>().WithMany().HasForeignKey(x => x.ArticleId).OnDelete(DeleteBehavior.Restrict);
                 e.HasOne<User>().WithMany().HasForeignKey(x => x.RecipientUserId).OnDelete(DeleteBehavior.Restrict);
+            });
+            modelBuilder.Entity<SaleInstallment>(e =>
+            {
+                e.Property(x => x.InstallmentAmount).HasPrecision(18, 2);
+                e.Property(x => x.PaidAmount).HasPrecision(18, 2);
+                e.Property(x => x.DueDate).HasColumnType("date");
+                e.HasIndex(x => new { x.SaleId, x.InstallmentNumber }).IsUnique();
+                e.HasIndex(x => new { x.CompanyId, x.DueDate });
+                e.HasOne(x => x.Sale).WithMany(x => x.Installments)
+                    .HasForeignKey(x => x.SaleId).OnDelete(DeleteBehavior.Restrict);
+            });
+            modelBuilder.Entity<SaleInstallmentReceipt>(e =>
+            {
+                e.Property(x => x.Amount).HasPrecision(18, 2);
+                e.HasIndex(x => x.OperationKey).IsUnique();
+                e.HasIndex(x => new { x.CompanyId, x.SaleInstallmentId });
+                e.HasOne(x => x.SaleInstallment).WithMany(x => x.Receipts)
+                    .HasForeignKey(x => x.SaleInstallmentId).OnDelete(DeleteBehavior.Restrict);
             });
             modelBuilder.Entity<SaleOperation>().HasIndex(x => x.OperationKey).IsUnique();
             modelBuilder.Entity<SaleCancellation>().HasIndex(x => x.SaleId).IsUnique();
