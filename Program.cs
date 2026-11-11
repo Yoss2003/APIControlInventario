@@ -218,13 +218,43 @@ using (var scope = app.Services.CreateScope())
 
         // Catálogo de permisos compatible con registros existentes; no se alteran
         // permisos ya asignados a los roles.
-        var registeredCodes = context.Permissions.Select(x => x.SystemCode).ToHashSet();
-        foreach (var (code, label) in InventoryPermissionCodes.Definitions)
+        // Algunas bases restauradas desde MAUI/SQL tienen los IDs conservados,
+        // pero la secuencia identity de PostgreSQL sigue en un valor anterior.
+        // Sin sincronizarla, SaveChanges provoca 23505 PK_Permissions.
+        // El bloqueo serializa semillas simultáneas y evita IDs duplicados.
+        using (var permissionsTx = context.Database.BeginTransaction())
         {
-            if (!registeredCodes.Contains(code))
-                context.Permissions.Add(new Permission { SystemCode = code, Name = label });
+            context.Database.ExecuteSqlRaw(
+                @"LOCK TABLE ""Permissions"" IN SHARE ROW EXCLUSIVE MODE;");
+            context.Database.ExecuteSqlRaw("""
+                DO $permissions_seed$
+                DECLARE identity_sequence regclass;
+                BEGIN
+                    identity_sequence := pg_get_serial_sequence('"Permissions"', 'Id')::regclass;
+                    IF identity_sequence IS NULL THEN
+                        RAISE EXCEPTION 'No se encontró la secuencia de Permissions.Id';
+                    END IF;
+                    -- Avanzar la secuencia sin retrocederla: MAX(Id) o su próximo valor.
+                    PERFORM setval(identity_sequence,
+                        GREATEST(
+                            COALESCE((SELECT MAX("Id") FROM "Permissions"), 0),
+                            nextval(identity_sequence)
+                        ), true);
+                END;
+                $permissions_seed$;
+                """);
+
+            var registeredCodes = context.Permissions
+                .Select(x => x.SystemCode)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var (code, label) in InventoryPermissionCodes.Definitions)
+            {
+                if (registeredCodes.Add(code))
+                    context.Permissions.Add(new Permission { SystemCode = code, Name = label });
+            }
+            context.SaveChanges();
+            permissionsTx.Commit();
         }
-        context.SaveChanges();
     }
     catch (Exception ex)
     {
