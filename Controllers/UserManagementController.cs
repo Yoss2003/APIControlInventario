@@ -50,6 +50,7 @@ public sealed class UserManagementController(
     {
         if (!await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        if (!await permissions.CanAssignRoleAsync(User, input.RoleId)) return Forbid();
         var result = await registration.RegisterAsync(CompanyId, input, firstAdministrator: false);
         return result.Success ? Ok(result.Created) : Conflict(new { error = result.Error });
     }
@@ -130,7 +131,8 @@ public sealed class UserManagementController(
     [HttpPut("users/{id:int}/permissions")]
     public async Task<IActionResult> UpdateUserPermissions(int id, [FromBody] UserPermissionUpdate input)
     {
-        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+        if (!InventoryAccessPolicy.IsManager(User) ||
+            !await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
         if (id == UserId) return Conflict(new { error = "No puedes cambiar tus propios permisos." });
         var user = await db.Users.AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == CompanyId);
@@ -165,8 +167,8 @@ public sealed class UserManagementController(
         if (user.RoleId == 1 || user.RoleId == 2) return Forbid();
         if (input.RoleId.HasValue)
         {
-            if (input.RoleId <= 2 || !await db.Roles.AnyAsync(r => r.Id == input.RoleId.Value))
-                return BadRequest(new { error = "Rol inválido." });
+            if (!await permissions.CanAssignRoleAsync(User, input.RoleId.Value))
+                return Forbid();
             user.RoleId = input.RoleId.Value;
         }
         user.IsActive = input.IsActive;
