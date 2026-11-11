@@ -84,6 +84,7 @@ builder.Services.AddScoped<ITimeZoneItemService, TimeZoneItemService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ICompanyLicenseService, CompanyLicenseService>();
 builder.Services.AddScoped<InventoryAccessPolicy>();
+builder.Services.AddScoped<ManagedUserRegistration>();
 
 builder.Services.AddScoped<IRolePermissionService, RolePermissionService>();
 builder.Services.AddScoped<ICategoryMeasurementUnitService, CategoryMeasurementUnitService>();
