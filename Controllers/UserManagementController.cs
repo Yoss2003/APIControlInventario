@@ -15,11 +15,16 @@ public sealed class UserManagementController(
 {
     private int CompanyId => InventoryAccessPolicy.CompanyId(User);
     private int UserId => InventoryAccessPolicy.UserId(User);
+    private bool IsManager => InventoryAccessPolicy.IsManager(User);
+    private async Task<bool> CanViewAsync() => IsManager &&
+        await permissions.HasAsync(User, InventoryPermissionCodes.ViewUsers);
+    private async Task<bool> CanEditAsync() => IsManager &&
+        await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers);
 
     [HttpGet("users")]
     public async Task<IActionResult> ListUsers()
     {
-        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+        if (!await CanViewAsync()) return Forbid();
         var items = await db.Users.AsNoTracking().Where(u => u.CompanyId == CompanyId)
             .OrderBy(u => u.Username)
             .Select(u => new
@@ -39,7 +44,7 @@ public sealed class UserManagementController(
     [HttpGet("roles")]
     public async Task<IActionResult> Roles()
     {
-        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+        if (!await CanViewAsync()) return Forbid();
         return Ok(await db.Roles.AsNoTracking().Where(r => r.Id > 2)
             .Select(r => new { r.Id, r.Name, r.Description })
             .OrderBy(r => r.Name).ToListAsync());
@@ -48,7 +53,7 @@ public sealed class UserManagementController(
     [HttpPost("users")]
     public async Task<IActionResult> CreateUser([FromBody] ManagedUserInput input)
     {
-        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+        if (!await CanEditAsync()) return Forbid();
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         if (!await permissions.CanAssignRoleAsync(User, input.RoleId)) return Forbid();
         var result = await registration.RegisterAsync(CompanyId, input, firstAdministrator: false);
@@ -65,7 +70,7 @@ public sealed class UserManagementController(
     [HttpPatch("users/{id:int}/details")]
     public async Task<IActionResult> UpdateDetails(int id, [FromBody] UserDetailsUpdate input)
     {
-        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+        if (!await CanEditAsync()) return Forbid();
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
         var user = await db.Users.Include(u => u.Employee)
             .FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == CompanyId);
@@ -105,8 +110,7 @@ public sealed class UserManagementController(
     [HttpGet("users/{id:int}/permissions")]
     public async Task<IActionResult> UserPermissions(int id)
     {
-        if (id != UserId &&
-            !await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+        if (!await CanViewAsync()) return Forbid();
         var user = await db.Users.AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == CompanyId);
         if (user is null) return NotFound();
@@ -131,8 +135,7 @@ public sealed class UserManagementController(
     [HttpPut("users/{id:int}/permissions")]
     public async Task<IActionResult> UpdateUserPermissions(int id, [FromBody] UserPermissionUpdate input)
     {
-        if (!InventoryAccessPolicy.IsManager(User) ||
-            !await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+        if (!await CanEditAsync()) return Forbid();
         if (id == UserId) return Conflict(new { error = "No puedes cambiar tus propios permisos." });
         var user = await db.Users.AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == CompanyId);
@@ -160,7 +163,7 @@ public sealed class UserManagementController(
     [HttpPatch("users/{id:int}/access")]
     public async Task<IActionResult> UpdateAccess(int id, [FromBody] UserAccessUpdate input)
     {
-        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+        if (!await CanEditAsync()) return Forbid();
         if (id == UserId) return Conflict(new { error = "No puedes modificar tu propio estado o rol." });
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == CompanyId);
         if (user is null) return NotFound();
