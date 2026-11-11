@@ -54,7 +54,8 @@ builder.Services.AddScoped<IArticleService, ArticleService>();
 builder.Services.AddScoped<IBrandService, BrandService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<ICurrencyService, CurrencyService>();
-builder.Services.AddScoped<ICustomerService, CustomerService>();
+builder.Services.AddHttpClient<ICustomerService, CustomerService>(client =>
+    client.Timeout = TimeSpan.FromSeconds(20));
 builder.Services.AddScoped<IDateFormatService, DateFormatService>();
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 builder.Services.AddScoped<IExportRouteService, ExportRouteService>();
