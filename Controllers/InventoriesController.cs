@@ -69,6 +69,40 @@ public sealed class InventoriesController(
         return Ok(masters);
     }
 
+    /// <summary>
+    /// Vista de solo lectura del catálogo de un maestro. Para ver otra empresa
+    /// se requiere rol desarrollador; no modifica el contexto ni habilita stock.
+    /// </summary>
+    [HttpGet("masters/{masterId:int}/catalogs")]
+    public async Task<IActionResult> GetMasterCatalogs(int masterId)
+    {
+        if (!TryScope(out var companyId, out _)) return Unauthorized();
+        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
+        var master = await _db.Inventories.AsNoTracking()
+            .FirstOrDefaultAsync(i => i.Id == masterId && i.IsMaster && i.IsActive &&
+                (IsDeveloper || i.CompanyId == companyId));
+        if (master is null) return NotFound();
+
+        var categories = await _db.Categories.AsNoTracking()
+            .Where(c => c.CompanyId == master.CompanyId && c.InventoryId == masterId && c.IsActive)
+            .OrderBy(c => c.Name).Select(c => new { c.Id, c.Name, c.ParentCategoryId })
+            .ToListAsync();
+        var brands = await _db.Brands.AsNoTracking()
+            .Where(b => b.CompanyId == master.CompanyId && b.InventoryId == masterId && b.IsActive)
+            .OrderBy(b => b.Name).Select(b => new { b.Id, b.Name, b.CategoryId })
+            .ToListAsync();
+        var suppliers = await _db.Suppliers.AsNoTracking()
+            .Where(p => p.CompanyId == master.CompanyId && p.InventoryId == masterId && p.IsActive)
+            .OrderBy(p => p.BusinessName)
+            .Select(p => new { p.Id, p.Ruc, p.BusinessName, p.ContactName, p.Email, p.Phone })
+            .ToListAsync();
+        return Ok(new
+        {
+            master.Id, master.CompanyId, master.InventoryName,
+            categories, brands, suppliers
+        });
+    }
+
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetInventory(int id)
     {
