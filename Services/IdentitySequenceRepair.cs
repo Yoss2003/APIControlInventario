@@ -10,7 +10,7 @@ public static class IdentitySequenceRepair
     {
         using var transaction = db.Database.BeginTransaction();
         db.Database.ExecuteSqlRaw(
-            """LOCK TABLE "Users", "Employees", "Inventories" IN SHARE ROW EXCLUSIVE MODE;""");
+            """LOCK TABLE "Users", "Employees", "Inventories", "RolePermissions", "RolePermissions" IN SHARE ROW EXCLUSIVE MODE;""");
 
         // La lista es constante, nunca proviene de datos del usuario.
         foreach (var table in new[] { "Users", "Employees", "Inventories" })
