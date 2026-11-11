@@ -126,6 +126,10 @@ public sealed class InstallmentPaymentsController(AppDbContext db) : BaseApiCont
             .SingleOrDefaultAsync();
         if (sale == null || sale.PaymentType != PaymentType.Cuotas)
             return Conflict(new { error = "La cuota no corresponde a una venta a crédito." });
+        if (movement.ActionId != 2 ||
+            !await _db.SaleDetails.AnyAsync(d => d.SaleId == sale.Id && d.CompanyId == companyId &&
+                d.ArticleId == movement.ArticleId))
+            return Conflict(new { error = "El movimiento de la cuota no corresponde al detalle de la venta." });
         if (await _db.SaleCancellations.AnyAsync(c => c.SaleId == saleId && c.CompanyId == companyId))
             return Conflict(new { error = "La venta fue anulada y no admite abonos." });
 
