@@ -113,6 +113,20 @@ Los dos endpoints de venta aceptan `Cuotas` cuando incluyen una configuración d
 
 La migración `20261111043000_SaleInstallmentLedger` crea dos tablas nuevas y sus índices. El arranque actual de la API ejecuta `Database.Migrate()`, por lo que la migración se aplicará al iniciar el código después del despliegue: hacer copia de seguridad de PostgreSQL previamente.
 
+## Compatibilidad financiera y protecciones tomadas de PR #30
+
+Solo existe **un sistema para las ventas a cuotas nuevas**: `SaleInstallments` y `SaleInstallmentReceipts`. El catálogo y el control de billeteras son compartidos por ventas normales, crédito y abonos. La migración es aditiva y no elimina tablas ni registros históricos.
+
+Para conservar datos previos, `AccountReceivables` e `InstallmentPayments` siguen estando disponibles como **histórico**. Las operaciones `GET` comprueban pertenencia a la empresa y acceso al inventario. Las rutas `POST/PUT/DELETE /api/AccountReceivables` se cierran para evitar la creación, modificación o borrado manual de deudas. Las rutas `PUT/DELETE /api/InstallmentPayments` se cierran para evitar modificar los abonos registrados.
+
+`POST /api/InstallmentPayments` se conserva únicamente para pagos de créditos **históricos comprobados**: valida relación movimiento-venta, saldo, permisos, total recibido y anulación; bloquea primero venta y luego cuota. Si la venta tiene un cronograma en el libro nuevo, rechaza el cobro para no duplicar saldos. Este endpoint histórico no dispone de clave idempotente: no se debe reintentar un cobro sin consultar primero el resultado. Los cobros nuevos deben usar el endpoint idempotente de `Sales`.
+
+El antiguo `GET /api/InstallmentPayments/sale/{id}` sigue sirviendo consultas de créditos históricos; los nuevos usan `GET /api/Sales/{id}/installments`.
+
+No se puede anular un crédito nuevo si tuvo adelanto o abonos. Un crédito nuevo sin cobros se puede anular y su cronograma se conserva para auditoría. Un crédito histórico sin cronograma del libro nuevo se deriva a revisión antes de anular; esto evita restablecer stock sin reconciliar obligaciones previas.
+
+**PR #30 y #31 no deben fusionarse juntas.** Las protecciones de la #30 ya fueron integradas en #31 adaptadas al libro nuevo. El frontend Angular debe consumir los endpoints nuevos antes del despliegue.
+
 ## Comprobaciones antes de producción
 
 - Construir: `dotnet build InventoryAPI.sln` con .NET 10 y PostgreSQL de pruebas.
