@@ -11,7 +11,8 @@ namespace InventoryAPI.Controllers;
 /// <summary>Administración por empresa; siempre deriva su ámbito del JWT.</summary>
 public sealed class UserManagementController(
     AppDbContext db, InventoryAccessPolicy permissions,
-    ManagedUserRegistration registration) : BaseApiController
+    ManagedUserRegistration registration,
+    UserCredentialMailer mailer) : BaseApiController
 {
     private int CompanyId => InventoryAccessPolicy.CompanyId(User);
     private int UserId => InventoryAccessPolicy.UserId(User);
@@ -156,6 +157,49 @@ public sealed class UserManagementController(
         flags.CanViewProfits = input.CanViewProfits;
         await db.SaveChangesAsync();
         return NoContent();
+    }
+
+    public sealed record ResendCredentialsInput([EmailAddress] string? CorrectedEmail);
+
+    [HttpPost("users/{id:int}/resend-credentials")]
+    public async Task<IActionResult> ResendCredentials(
+        int id, [FromBody] ResendCredentialsInput input)
+    {
+        if (!await CanEditAsync()) return Forbid();
+        if (id == UserId) return Conflict(new { error = "Utiliza recuperación de cuenta para tus propias credenciales." });
+        var target = await db.Users.Include(u => u.Employee)
+            .FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == CompanyId);
+        if (target is null) return NotFound(new { error = "Usuario no encontrado en tu empresa." });
+        if (target.RoleId == 1 || (target.RoleId == 2 &&
+            !InventoryAccessPolicy.IsDeveloper(User))) return Forbid();
+
+        var email = string.IsNullOrWhiteSpace(input.CorrectedEmail)
+            ? target.Email?.Trim() : input.CorrectedEmail.Trim();
+        if (string.IsNullOrWhiteSpace(email) ||
+            !new EmailAddressAttribute().IsValid(email) || email.Length > 254)
+            return BadRequest(new { error = "Ingresa un correo válido." });
+        if (await db.Users.AnyAsync(u => u.Id != target.Id &&
+            u.Email != null && u.Email.ToLower() == email.ToLower()))
+            return Conflict(new { error = "El correo ya pertenece a otro usuario." });
+        if (!await mailer.IsConfiguredAsync(CompanyId))
+            return StatusCode(503, new { error = "SMTP no configurado. Revisa Ajustes antes de reenviar." });
+
+        // Revoca todas las contraseñas temporales anteriores. Nunca devuelve la nueva clave.
+        var generated = UserCredentialMailer.NewTemporaryPassword();
+        target.Email = email;
+        target.Password = PasswordHashService.HashPassword(generated);
+        target.MustChangePassword = true;
+        await db.SaveChangesAsync();
+        var delivered = await mailer.SendAsync(CompanyId, email,
+            target.Employee?.FirstName ?? target.Username ?? "Usuario",
+            target.Username ?? string.Empty, generated);
+        return Ok(new {
+            emailSent = delivered.Sent,
+            message = delivered.Sent
+                ? "Nuevas credenciales enviadas. La contraseña anterior ya no funciona."
+                : delivered.Message,
+            email = email
+        });
     }
 
     public sealed record UserAccessUpdate(bool IsActive, int? RoleId);
