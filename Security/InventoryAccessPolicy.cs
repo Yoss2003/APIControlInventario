@@ -34,6 +34,21 @@ public sealed class InventoryAccessPolicy(AppDbContext db)
             p.Permission.SystemCode == code);
     }
 
+    /// <summary>Un delegado nunca puede asignar permisos superiores a los que posee.</summary>
+    public async Task<bool> CanAssignRoleAsync(ClaimsPrincipal principal, int roleId)
+    {
+        if (roleId <= 2 || !await db.Roles.AsNoTracking().AnyAsync(r => r.Id == roleId))
+            return false;
+        if (IsManager(principal)) return true;
+        if (!await HasAsync(principal, InventoryPermissionCodes.ManageUsers))
+            return false;
+        var owned = (await GrantedAsync(principal)).ToHashSet(StringComparer.Ordinal);
+        var requested = await db.RolePermissions.AsNoTracking()
+            .Where(p => p.RoleId == roleId && p.Permission != null)
+            .Select(p => p.Permission!.SystemCode).Distinct().ToListAsync();
+        return requested.All(owned.Contains);
+    }
+
     public async Task<string[]> GrantedAsync(ClaimsPrincipal principal)
     {
         var role = RoleId(principal);
