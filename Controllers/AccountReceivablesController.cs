@@ -34,59 +34,18 @@ namespace InventoryAPI.Controllers
             catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
         }
 
+        // Las cuotas se generan atómicamente al registrar la venta;
+        // cambios manuales aquí alterarían el saldo contable y permitirían cobros inconsistentes.
         [HttpPost]
-        public async Task<IActionResult> PostAccountReceivable([FromBody] AccountReceivable accountReceivable)
-        {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-            try
-            {
-                accountReceivable.CompanyId = ObtenerEmpresaSegura();
-                var success = await _accountReceivableService.CreateAsync(accountReceivable);
+        public IActionResult PostAccountReceivable() =>
+            Conflict(new { error = "El cronograma solo se genera mediante POST /api/Sales/quick." });
 
-                if (!success) return BadRequest("No se pudo crear.");
-                return CreatedAtAction(nameof(GetAccountReceivable), new { id = accountReceivable.Id }, accountReceivable);
-            }
-            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
-        }
+        [HttpPut("{id:int}")]
+        public IActionResult PutAccountReceivable(int id) =>
+            Conflict(new { error = "No se permite editar cuotas directamente. Los abonos deben registrarse mediante InstallmentPayments." });
 
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutAccountReceivable(int id, [FromBody] AccountReceivable accountReceivable)
-        {
-            if (id != accountReceivable.Id) return BadRequest("El ID no coincide.");
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            int companyId = ObtenerEmpresaSegura();
-            accountReceivable.CompanyId = companyId;
-
-            try
-            {
-                var existingAccountReceivable = await _accountReceivableService.GetByIdAsync(id);
-                if (existingAccountReceivable == null || existingAccountReceivable.CompanyId != companyId) return NotFound();
-
-                var success = await _accountReceivableService.UpdateAsync(accountReceivable);
-                if (!success) return BadRequest("No se pudo actualizar.");
-
-                return NoContent();
-            }
-            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
-        }
-
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteAccountReceivable(int id)
-        {
-            try
-            {
-                int companyId = ObtenerEmpresaSegura();
-                var existingAccountReceivable = await _accountReceivableService.GetByIdAsync(id);
-
-                if (existingAccountReceivable == null || existingAccountReceivable.CompanyId != companyId) return NotFound();
-
-                var success = await _accountReceivableService.DeleteAsync(id);
-                if (!success) return BadRequest("No se pudo eliminar.");
-
-                return NoContent();
-            }
-            catch (Exception ex) { return StatusCode(500, $"Error interno: {ex.Message}"); }
-        }
+        [HttpDelete("{id:int}")]
+        public IActionResult DeleteAccountReceivable(int id) =>
+            Conflict(new { error = "No se permite borrar cuotas; anula la venta sin cobros o utiliza un proceso financiero auditado." });
     }
 }
