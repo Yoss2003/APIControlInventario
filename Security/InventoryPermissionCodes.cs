@@ -8,6 +8,7 @@ public static class InventoryPermissionCodes
     public const string CreateInventory = "CREATE_INVENTORIES";
     public const string ManageInventoryAccess = "MANAGE_INVENTORY_ACCESS";
     public const string ManageUsers = "MANAGE_USERS";
+    public const string ViewUsers = "VIEW_USERS";
 
     public static readonly IReadOnlyDictionary<string, string> Definitions =
         new Dictionary<string, string>
@@ -16,6 +17,7 @@ public static class InventoryPermissionCodes
             [ManageMaster] = "Administrar catálogos maestros de la empresa",
             [CreateInventory] = "Crear y administrar inventarios de trabajo propios",
             [ManageInventoryAccess] = "Compartir y administrar accesos a inventarios",
-            [ManageUsers] = "Gestionar usuarios de la empresa"
+            [ManageUsers] = "Crear y editar usuarios de la empresa",
+            [ViewUsers] = "Consultar usuarios y roles de la empresa"
         };
 }
