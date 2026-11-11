@@ -67,7 +67,9 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
     }
 
     public sealed record QuickSaleRequest(int ArticleId, decimal Quantity, decimal UnitPrice,
-        string? CustomerName, string PaymentMethod, string? Notes, Guid OperationKey, List<int>? DetailIds, string? DigitalWallet = null);
+        string? CustomerName, string PaymentMethod, string? Notes, Guid OperationKey, List<int>? DetailIds,
+        string? DigitalWallet = null, string? InstallmentFrequency = null, int? InstallmentCount = null,
+        decimal? DownPayment = null, DateOnly? FirstDueDate = null);
     public sealed record CancelSaleRequest(string Reason);
     public sealed record InstallmentSimulationRequest(decimal TotalAmount, SaleInstallmentPlanRequest InstallmentPlan);
     public sealed record InstallmentReceiptRequest(decimal Amount, string PaymentMethod,
@@ -230,9 +232,28 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             !SalePaymentResolver.TryResolve(request.PaymentMethod, request.DigitalWallet, PaymentType.Efectivo,
                 out var payment, out var paymentError))
             return BadRequest(new { error = "Método de pago inválido o billetera sin seleccionar." });
-        // POS rápido carece de cronograma: exigir el POST principal para un crédito.
-        if (payment == PaymentType.Cuotas)
-            return BadRequest(new { error = "Para una venta a cuotas utiliza POST /api/Sales con installmentPlan." });
+        List<SaleInstallment> schedule = [];
+        var credit = payment == PaymentType.Cuotas;
+        var downPayment = request.DownPayment ?? 0m;
+        if (credit)
+        {
+            if (string.IsNullOrWhiteSpace(request.CustomerName) ||
+                request.CustomerName.Trim().Equals("Público general", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { error = "Identifica al cliente para registrar una venta a cuotas." });
+            var creditRequest = new SaleInstallmentPlanRequest
+            {
+                InstallmentCount = request.InstallmentCount ?? 0,
+                DownPayment = downPayment,
+                Frequency = request.InstallmentFrequency ?? string.Empty,
+                FirstDueDate = request.FirstDueDate
+            };
+            if (!SaleInstallmentCalculator.TryBuild(request.Quantity * request.UnitPrice, creditRequest,
+                SaleInstallmentCalculator.BusinessToday(), out schedule, out var creditError))
+                return BadRequest(new { error = creditError });
+        }
+        else if (request.InstallmentCount != null || request.DownPayment != null ||
+            request.FirstDueDate != null || !string.IsNullOrWhiteSpace(request.InstallmentFrequency))
+            return BadRequest(new { error = "La configuración de cuotas solamente corresponde a ventas financiadas." });
         var prior = await _db.SaleOperations.FirstOrDefaultAsync(x => x.OperationKey == request.OperationKey);
         if (prior != null) return prior.CompanyId == companyId ? Ok(new { saleId = prior.SaleId, reused = true }) : Conflict();
 
@@ -255,10 +276,13 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             if (usable != detailIds.Count) return Conflict(new { error = "Alguna de las series no está disponible." });
         }
         else if (detailIds.Count > 0) return BadRequest(new { error = "La selección de series solo aplica a artículos serializados." });
-        var modeId = await _db.SalesModes.Select(x => x.Id).OrderBy(x => x).FirstOrDefaultAsync();
+        var modeId = credit
+            ? await _db.SalesModes.Where(x => x.SalesModeName == schedule[0].Frequency)
+                .Select(x => x.Id).FirstOrDefaultAsync()
+            : await _db.SalesModes.Select(x => x.Id).OrderBy(x => x).FirstOrDefaultAsync();
         if (modeId == 0)
         {
-            var mode = new SalesMode { SalesModeName = "Venta mostrador" };
+            var mode = new SalesMode { SalesModeName = credit ? schedule[0].Frequency : "Venta mostrador" };
             _db.SalesModes.Add(mode);
             await _db.SaveChangesAsync();
             modeId = mode.Id;
@@ -269,7 +293,7 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             UserId = userId, CompanyId = companyId, SalesModeId = modeId,
             SaleDate = DateTime.UtcNow, CustomerName = string.IsNullOrWhiteSpace(request.CustomerName) ? "Público general" : request.CustomerName.Trim(),
             PaymentType = payment, TotalAmount = total, Notes = request.Notes,
-            AmountReceived = total, ChangeGiven = 0,
+            AmountReceived = credit ? downPayment : total, ChangeGiven = 0,
             SaleDetails = [new SaleDetail
             {
                 ArticleId = article.Id, CompanyId = companyId, Quantity = request.Quantity,
@@ -295,9 +319,21 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
                 SaleId = sale.Id, CreatedAt = DateTime.UtcNow
             });
         _db.SaleOperations.Add(new SaleOperation { OperationKey = request.OperationKey, SaleId = sale.Id, CompanyId = companyId });
+        // El POS rápido también deja cuotas persistidas dentro de la transacción de stock.
+        foreach (var installment in schedule)
+        {
+            installment.SaleId = sale.Id;
+            installment.CompanyId = companyId;
+        }
+        _db.SaleInstallments.AddRange(schedule);
         await _db.SaveChangesAsync();
         await tx.CommitAsync();
-        return Ok(new { saleId = sale.Id, total });
+        return Ok(new
+        {
+            saleId = sale.Id, total, amountReceived = sale.AmountReceived,
+            financedAmount = credit ? total - downPayment : 0m,
+            installmentCount = schedule.Count
+        });
     }
 
     [HttpPost("{id:int}/cancel")]
