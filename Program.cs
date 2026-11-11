@@ -85,6 +85,7 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ICompanyLicenseService, CompanyLicenseService>();
 builder.Services.AddScoped<InventoryAccessPolicy>();
 builder.Services.AddScoped<ManagedUserRegistration>();
+builder.Services.AddScoped<UserCredentialMailer>();
 
 builder.Services.AddScoped<IRolePermissionService, RolePermissionService>();
 builder.Services.AddScoped<ICategoryMeasurementUnitService, CategoryMeasurementUnitService>();
@@ -214,6 +215,8 @@ using (var scope = app.Services.CreateScope())
 
         // Idempotente: aprovisiona el maestro y el inventario personal
         // para empresas/usuarios anteriores a la Fase 3.5 (incluido YosMG).
+        // Restauraciones antiguas pueden tener secuencias de usuarios/empleados/inventarios atrasadas.
+        IdentitySequenceRepair.Synchronize(context);
         InventoryProvisioner.EnsureExistingAsync(context).GetAwaiter().GetResult();
 
         // Catálogo de permisos compatible con registros existentes; no se alteran
