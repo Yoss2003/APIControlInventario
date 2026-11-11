@@ -278,7 +278,7 @@ namespace InventoryAPI.Services
         {
             var user = await _workFlow.Repository<User>().GetByIdAsync(userId);
             if (user == null) return (false, null, "Usuario no encontrado.");
-            user.Password = SecurityHelper.GenerarHashSHA256(newPassword);
+            user.Password = PasswordHashService.HashPassword(newPassword);
             user.MustChangePassword = false;
             await _workFlow.CompleteAsync();
             return (true, user, "Contraseña cambiada con éxito.");
