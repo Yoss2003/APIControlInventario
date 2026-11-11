@@ -72,7 +72,7 @@ public sealed class InventoriesController(
     public async Task<IActionResult> GetMasterInventories()
     {
         if (!TryScope(out var company, out _)) return Unauthorized();
-        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
+        if (!IsDeveloper) return Forbid();
         var masters = await _db.Inventories.AsNoTracking()
             .Where(i => i.IsMaster && (IsDeveloper || i.CompanyId == company))
             .Join(_db.Companies.AsNoTracking(),
@@ -94,7 +94,7 @@ public sealed class InventoriesController(
     public async Task<IActionResult> GetMasterCatalogs(int masterId)
     {
         if (!TryScope(out var companyId, out _)) return Unauthorized();
-        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ViewMaster)) return Forbid();
+        if (!IsDeveloper) return Forbid();
         var master = await _db.Inventories.AsNoTracking()
             .FirstOrDefaultAsync(i => i.Id == masterId && i.IsMaster &&
                 (IsDeveloper || i.CompanyId == companyId));
