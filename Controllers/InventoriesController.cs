@@ -123,6 +123,10 @@ public sealed class InventoriesController(
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
         if (!await permissions.HasAsync(User, InventoryPermissionCodes.CreateInventory)) return Forbid();
+        // El desarrollador que navega otra empresa debe elegir expresamente
+        // un propietario de esa empresa; nunca se apropia de stock ajeno.
+        if (!await _db.Users.AnyAsync(u => u.Id == user && u.CompanyId == company && u.IsActive))
+            return Conflict(new { error = "Selecciona un propietario de esta empresa mediante el alta administrada de inventario." });
         if (!ModelState.IsValid || string.IsNullOrWhiteSpace(inventory.InventoryName))
             return BadRequest(new { error = "El nombre del inventario es obligatorio." });
 
@@ -140,6 +144,36 @@ public sealed class InventoriesController(
         _db.Inventories.Add(inventory);
         await _db.SaveChangesAsync();
         return CreatedAtAction(nameof(GetInventory), new { id = inventory.Id }, inventory);
+    }
+
+    public sealed record AssignedInventoryInput(
+        int OwnerUserId, string InventoryName, string? Alias);
+
+    /// <summary>Creación explícita por administrador en un usuario de su empresa.</summary>
+    [HttpPost("assign")]
+    public async Task<IActionResult> AssignInventory([FromBody] AssignedInventoryInput request)
+    {
+        if (!TryScope(out var company, out _)) return Unauthorized();
+        if (!IsDeveloper && !IsAdmin) return Forbid();
+        if (!await permissions.HasAsync(User, InventoryPermissionCodes.CreateInventory) ||
+            !await permissions.HasAsync(User, InventoryPermissionCodes.ManageInventoryAccess))
+            return Forbid();
+        if (request.OwnerUserId <= 0 || string.IsNullOrWhiteSpace(request.InventoryName) ||
+            request.InventoryName.Trim().Length > 255)
+            return BadRequest(new { error = "Indica un propietario y nombre válidos." });
+        var owner = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u =>
+            u.Id == request.OwnerUserId && u.CompanyId == company && u.IsActive && u.StatusId == 1);
+        if (owner is null) return NotFound(new { error = "El propietario no existe o no pertenece a la empresa." });
+        var now = DateTime.UtcNow;
+        var item = new Inventory
+        {
+            CompanyId = company, UserId = owner.Id, Username = owner.Username ?? string.Empty,
+            InventoryName = request.InventoryName.Trim(), Alias = request.Alias?.Trim(),
+            CreationDate = now, ModificationDate = now, IsActive = true, IsMaster = false
+        };
+        _db.Inventories.Add(item);
+        await _db.SaveChangesAsync();
+        return Ok(new { item.Id, item.CompanyId, item.UserId, item.InventoryName, item.Alias });
     }
 
     [HttpPut("{id:int}")]
