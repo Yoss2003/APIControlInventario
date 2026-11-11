@@ -1,12 +1,15 @@
 using InventoryAPI.Models;
 using InventoryAPI.Models.DTO;
+using InventoryAPI.Data;
+using InventoryAPI.Security;
+using Microsoft.EntityFrameworkCore;
 using InventoryAPI.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InventoryAPI.Controllers
 {
-    public class UsersController(IUserService userService, IWebHostEnvironment env, IFcmNotificationService fcmNotificationService, ICompanyLicenseService licenseService) : BaseApiController
+    public class UsersController(IUserService userService, IWebHostEnvironment env, IFcmNotificationService fcmNotificationService, ICompanyLicenseService licenseService, InventoryAccessPolicy access, AppDbContext db) : BaseApiController
     {
         private readonly IUserService _userService = userService;
         private readonly IWebHostEnvironment _env = env;
@@ -16,6 +19,7 @@ namespace InventoryAPI.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<UserDTO>>> GetUsers()
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
             int companyId = ObtenerEmpresaSegura();
             var users = await _userService.GetUsersDtoAsync();
             return Ok(users.Where(u => u.CompanyId == companyId).ToList());
@@ -24,6 +28,7 @@ namespace InventoryAPI.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<UserDTO>> GetUser(int id)
         {
+            if (id != ObtenerUsuarioSeguro() && !await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
             int companyId = ObtenerEmpresaSegura();
             var userDto = await _userService.GetUserDtoByIdAsync(id);
 
@@ -36,6 +41,7 @@ namespace InventoryAPI.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> PutUser(int id, [FromBody] User userActualizado)
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
             int companyId = ObtenerEmpresaSegura();
             userActualizado.CompanyId = companyId;
 
@@ -43,6 +49,14 @@ namespace InventoryAPI.Controllers
             if (existingUser == null || existingUser.CompanyId != companyId)
                 return NotFound(new { mensaje = "El usuario no existe o no pertenece a tu sucursal." });
 
+            if (existingUser.RoleId == 1 || (existingUser.RoleId == 2 && !InventoryAccessPolicy.IsDeveloper(User))) return Forbid();
+            if (userActualizado.RoleId is 1 or 2 && !InventoryAccessPolicy.IsDeveloper(User)) return Forbid();
+            if (userActualizado.RoleId > 0 && !await db.Roles.AnyAsync(r => r.Id == userActualizado.RoleId))
+                return BadRequest(new { error = "Rol inválido." });
+            if (id == ObtenerUsuarioSeguro() && userActualizado.RoleId > 0 &&
+                userActualizado.RoleId != existingUser.RoleId)
+                return Conflict(new { error = "No puedes cambiar tu propio rol." });
+            userActualizado.Password = null; // Las contraseñas se cambian por un proceso separado.
             var (Success, Message) = await _userService.UpdateUserAsync(id, userActualizado);
             if (!Success)
             {
@@ -56,6 +70,12 @@ namespace InventoryAPI.Controllers
         [HttpPost]
         public async Task<ActionResult<User>> PostUser([FromBody] User user)
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+            if (user.RoleId is 1 or 2) return Conflict(new { error = "Usa Gestión Dev para registrar el administrador inicial. El rol desarrollador está protegido." });
+            if (user.RoleId <= 0 || !await db.Roles.AnyAsync(r => r.Id == user.RoleId))
+                return BadRequest(new { error = "Rol inválido." });
+            if (string.IsNullOrWhiteSpace(user.Password) || user.Password.Length < 12)
+                return BadRequest(new { error = "Se requiere una contraseña de al menos 12 caracteres." });
             user.CompanyId = ObtenerEmpresaSegura();
 
             int companyId = user.CompanyId.Value;
@@ -71,18 +91,26 @@ namespace InventoryAPI.Controllers
             var result = await _userService.CreateUserAsync(user, _env.ContentRootPath);
 
             if (!result.Success) return BadRequest(result.Data);
-            return CreatedAtAction(nameof(GetUser), new { id = ((User)result.Data).Id }, result.Data);
+            var created = (User)result.Data;
+            return CreatedAtAction(nameof(GetUser), new { id = created.Id },
+                new { created.Id, created.Username, created.Email, created.RoleId, created.CompanyId,
+                    personalInventoryProvisioned = true });
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteUser(int id)
         {
+            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers)) return Forbid();
+            if (id == ObtenerUsuarioSeguro()) return Conflict(new { error = "No puedes desactivar tu propia cuenta." });
             int companyId = ObtenerEmpresaSegura();
             string deletedBy = ObtenerUsuarioSeguro().ToString();
 
             var existingUser = await _userService.GetUserDtoByIdAsync(id);
             if (existingUser == null || existingUser.CompanyId != companyId) return NotFound();
-
+            if (existingUser.RoleId == 1 || (existingUser.RoleId == 2 && !InventoryAccessPolicy.IsDeveloper(User))) return Forbid();
+            if (existingUser.RoleId == 2 &&
+                await db.Users.CountAsync(u => u.CompanyId == companyId && u.RoleId == 2 && u.IsActive) <= 1)
+                return Conflict(new { error = "No se puede desactivar el último administrador." });
             var success = await _userService.DeleteAsync(id, deletedBy);
             if (!success) return NotFound();
 
