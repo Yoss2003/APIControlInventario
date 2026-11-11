@@ -2,10 +2,12 @@
 using InventoryAPI.Services.IServices;
 using InventoryAPI.Models;
 using InventoryAPI.Security;
+using InventoryAPI.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace InventoryAPI.Controllers
 {
-    public class EmployeePermissionsController(IEmployeePermissionService service, InventoryAccessPolicy policy) : BaseApiController
+    public class EmployeePermissionsController(IEmployeePermissionService service, InventoryAccessPolicy policy, AppDbContext db) : BaseApiController
     {
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetPermissionsByUser(int userId)
@@ -32,6 +34,10 @@ namespace InventoryAPI.Controllers
 
             var existingPerms = await service.GetByIdAsync(id);
             if (existingPerms == null || existingPerms.CompanyId != companyId) return NotFound();
+            if (existingPerms.UserId != permissions.UserId ||
+                !await db.Users.AnyAsync(u => u.Id == permissions.UserId &&
+                    u.CompanyId == companyId && u.RoleId > 2))
+                return Forbid();
 
             var success = await service.UpdateAsync(permissions);
             if (!success) return BadRequest();
