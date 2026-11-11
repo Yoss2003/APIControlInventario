@@ -34,8 +34,10 @@ public sealed class InventoriesController(
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
         var viewMaster = await permissions.HasAsync(User, InventoryPermissionCodes.ViewMaster);
-        var manageAll = await permissions.HasAsync(User, InventoryPermissionCodes.ManageInventoryAccess) &&
-                        (IsDeveloper || IsAdmin);
+        // El administrador no hereda acceso al stock privado de sus empleados.
+        // Solo ve sus inventarios propios o compartidos; el desarrollador
+        // puede inspeccionar operativos del contexto empresarial elegido.
+        var manageAll = IsDeveloper;
         var items = await _db.Inventories.AsNoTracking()
             .Where(i => i.CompanyId == company && i.IsActive &&
                 (i.IsMaster ? viewMaster :
@@ -44,6 +46,21 @@ public sealed class InventoriesController(
                          s.UserId == user && s.CompanyId == company))))
             .OrderBy(i => i.Alias ?? i.InventoryName).ToListAsync();
         return Ok(items);
+    }
+
+    /// <summary>
+    /// Supervisión administrativa de inventarios operativos de la empresa.
+    /// Solo metadatos; no concede acceso al stock si no existe asignación.
+    /// </summary>
+    [HttpGet("company-operational")]
+    public async Task<IActionResult> CompanyOperational()
+    {
+        if (!TryScope(out var company, out _)) return Unauthorized();
+        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ManageInventoryAccess))
+            return Forbid();
+        return Ok(await _db.Inventories.AsNoTracking()
+            .Where(i => i.CompanyId == company && !i.IsMaster)
+            .OrderBy(i => i.Alias ?? i.InventoryName).ToListAsync());
     }
 
     /// <summary>
@@ -108,7 +125,7 @@ public sealed class InventoriesController(
     {
         if (!TryScope(out var company, out var user)) return Unauthorized();
         var viewMaster = await permissions.HasAsync(User, InventoryPermissionCodes.ViewMaster);
-        var manager = IsDeveloper || IsAdmin;
+        var manager = IsDeveloper;
         var item = await _db.Inventories.AsNoTracking().FirstOrDefaultAsync(i =>
             i.Id == id && i.CompanyId == company && i.IsActive &&
             (i.IsMaster ? viewMaster :
