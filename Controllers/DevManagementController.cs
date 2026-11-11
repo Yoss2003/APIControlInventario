@@ -100,7 +100,12 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
                 c.IsActive, c.LogoUrl, c.PrimaryColorHex,
                 userCount = db.Users.Count(u => u.CompanyId == c.Id && u.IsActive),
                 totalUsers = db.Users.Count(u => u.CompanyId == c.Id),
+                // Los almacenes personales y el inventario general son conceptos distintos.
                 inventoryCount = db.Inventories.Count(i => i.CompanyId == c.Id && !i.IsMaster),
+                masterInventoryId = db.Inventories.Where(i => i.CompanyId == c.Id && i.IsMaster)
+                    .Select(i => (int?)i.Id).FirstOrDefault(),
+                masterInventoryActive = db.Inventories.Any(i => i.CompanyId == c.Id &&
+                    i.IsMaster && i.IsActive),
                 license = db.CompanyLicenses.Where(l => l.CompanyId == c.Id).Select(l => new
                 { l.Plan, l.MaxUsers, l.StartsAt, l.ExpiresAt, l.IsEnabled }).FirstOrDefault()
             }).ToListAsync();
@@ -152,11 +157,13 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
             IsEnabled = input.LicenseEnabled,
             UpdatedAt = now
         });
-        // Alta de empresa y maestro forman parte de la MISMA transacción.
-        db.Inventories.Add(InventoryProvisioner.NewMaster(company.Id));
+        // Alta de empresa, licencia y maestro forman parte de la MISMA transacción.
+        // El inventario maestro no es un almacén operativo ni pertenece a un usuario.
+        var masterInventory = InventoryProvisioner.NewMaster(company.Id);
+        db.Inventories.Add(masterInventory);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
-        return Ok(new { company.Id });
+        return Ok(new { company.Id, masterInventoryId = masterInventory.Id });
     }
 
     [HttpPut("companies/{id:int}")]
