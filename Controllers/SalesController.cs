@@ -124,6 +124,7 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
         {
             saleId = id,
             totalAmount = sale.TotalAmount,
+            amountReceived = sale.AmountReceived,
             downPayment = items.Count == 0 ? (decimal?)null : sale.TotalAmount - items.Sum(x => x.InstallmentAmount),
             financedAmount = items.Sum(x => x.InstallmentAmount),
             balance = items.Sum(x => x.InstallmentAmount - x.PaidAmount),
@@ -176,7 +177,7 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         // Bloquear primero la venta: la anulación utiliza la misma fila de exclusión.
-        await _db.Sales.FromSqlInterpolated(
+        var lockedSale = await _db.Sales.FromSqlInterpolated(
             $"SELECT * FROM \"Sales\" WHERE \"Id\" = {id} AND \"CompanyId\" = {companyId} FOR UPDATE")
             .SingleAsync();
         var installment = await _db.SaleInstallments.FromSqlInterpolated(
@@ -205,6 +206,7 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             Notes = request.Notes?.Trim(), OperationKey = request.OperationKey
         };
         installment.PaidAmount += request.Amount;
+        lockedSale.AmountReceived = lockedSale.AmountReceived.GetValueOrDefault() + request.Amount;
         _db.SaleInstallmentReceipts.Add(receipt);
         try
         {
@@ -216,7 +218,7 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
             return Conflict(new { error = "No se pudo confirmar el abono. Consulta la operación antes de reintentar." });
         }
         return Ok(new { receiptId = receipt.Id, balance = installment.InstallmentAmount - installment.PaidAmount,
-            paidAmount = installment.PaidAmount });
+            paidAmount = installment.PaidAmount, totalReceived = lockedSale.AmountReceived });
     }
 
 
