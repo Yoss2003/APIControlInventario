@@ -100,6 +100,7 @@ public sealed class DevManagementController(AppDbContext db) : ControllerBase
                 c.IsActive, c.LogoUrl, c.PrimaryColorHex,
                 userCount = db.Users.Count(u => u.CompanyId == c.Id && u.IsActive),
                 totalUsers = db.Users.Count(u => u.CompanyId == c.Id),
+                adminCount = db.Users.Count(u => u.CompanyId == c.Id && u.RoleId == 2 && u.IsActive),
                 // Los almacenes personales y el inventario general son conceptos distintos.
                 inventoryCount = db.Inventories.Count(i => i.CompanyId == c.Id && !i.IsMaster),
                 masterInventoryId = db.Inventories.Where(i => i.CompanyId == c.Id && i.IsMaster)
