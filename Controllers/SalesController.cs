@@ -177,7 +177,9 @@ public class SalesController(ISaleService saleService, AppDbContext db) : BaseAp
         if (request.Notes?.Length > 500)
             return BadRequest(new { error = "La observación del abono no puede superar 500 caracteres." });
 
-        var sale = await _db.Sales.Include(s => s.SaleDetails)
+        // Consultar permisos sin seguimiento para evitar una entidad Sale obsoleta.
+        // La lectura con FOR UPDATE dentro de la transacción cargará el saldo más reciente.
+        var sale = await _db.Sales.AsNoTracking().Include(s => s.SaleDetails)
             .FirstOrDefaultAsync(s => s.Id == id && s.CompanyId == companyId);
         if (sale == null) return NotFound();
         if (sale.PaymentType != PaymentType.Cuotas)
