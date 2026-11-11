@@ -33,7 +33,7 @@ public class SaleService(IWorkFlow workFlow, AppDbContext db)
         List<SaleInstallment> schedule = [];
         if (sale.PaymentType == PaymentType.Cuotas)
         {
-            if (!SaleInstallmentCalculator.TryBuild(total, sale.InstallmentPlan, DateOnly.FromDateTime(DateTime.UtcNow),
+            if (!SaleInstallmentCalculator.TryBuild(total, sale.InstallmentPlan, SaleInstallmentCalculator.BusinessToday(),
                 out schedule, out var error))
                 return (false, error);
             sale.AmountReceived = sale.InstallmentPlan!.DownPayment;
