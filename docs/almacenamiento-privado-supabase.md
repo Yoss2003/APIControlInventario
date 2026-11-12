@@ -1,4 +1,4 @@
-# Almacenamiento privado de InventarioWeb
+# Almacenamiento privado de OmniStock
 
 ## Qué cambia
 
