@@ -53,7 +53,7 @@ public sealed class UserCredentialMailer(AppDbContext db, IConfiguration config,
         var html = $"""
           <div style="font-family:Segoe UI,Arial,sans-serif;max-width:600px;margin:auto;padding:28px;
                       border:1px solid #dce4ea;border-radius:12px;background:#f9fbfd;color:#293845">
-            <h2 style="text-align:center;color:#2474a6">Bienvenido a Control Inventario, {safeName}</h2>
+            <h2 style="text-align:center;color:#2474a6">Bienvenido a OmniStock, {safeName}</h2>
             <p>Se ha creado tu cuenta de acceso. Estas son tus credenciales temporales:</p>
             <div style="border:1px solid #dce4ea;border-radius:9px;background:white;
                         padding:18px;text-align:center">
@@ -64,7 +64,7 @@ public sealed class UserCredentialMailer(AppDbContext db, IConfiguration config,
               Cambia esta contraseña obligatoriamente al ingresar por primera vez.
               Nunca compartas tus credenciales. Si no solicitaste esta cuenta, contacta al administrador.
             </p>
-            <p style="font-size:12px;color:#748390;text-align:center">Correo automático de Control Inventario.</p>
+            <p style="font-size:12px;color:#748390;text-align:center">Correo automático de OmniStock.</p>
           </div>
           """;
         try
@@ -75,10 +75,10 @@ public sealed class UserCredentialMailer(AppDbContext db, IConfiguration config,
                 Credentials = new NetworkCredential(smtpConfig.Username, smtpConfig.Password),
                 Timeout = 20000
             };
-            using var mail = new MailMessage(new MailAddress(smtpConfig.Sender, "Control Inventario"),
+            using var mail = new MailMessage(new MailAddress(smtpConfig.Sender, "OmniStock"),
                 new MailAddress(recipientEmail.Trim()))
             {
-                Subject = "Bienvenido a Control Inventario — credenciales temporales",
+                Subject = "Bienvenido a OmniStock — credenciales temporales",
                 Body = html,
                 IsBodyHtml = true
             };
