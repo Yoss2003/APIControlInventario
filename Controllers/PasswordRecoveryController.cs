@@ -34,7 +34,7 @@ public sealed class PasswordRecoveryController(AppDbContext db, IConfiguration c
             throw new InvalidOperationException("SMTP de recuperación no configurado.");
         using var smtp = new SmtpClient(host, int.TryParse(config["PasswordRecovery:SmtpPort"], out var port) ? port : 587)
         { EnableSsl = true, Credentials = new NetworkCredential(smtpUser, smtpPass) };
-        using var message = new MailMessage(new MailAddress(from), new MailAddress(to))
+        using var message = new MailMessage(new MailAddress(from, "OmniStock"), new MailAddress(to))
         { Subject = subject, Body = body, IsBodyHtml = false };
         await smtp.SendMailAsync(message);
     }
@@ -59,7 +59,7 @@ public sealed class PasswordRecoveryController(AppDbContext db, IConfiguration c
         var developerMail = config["PasswordRecovery:DeveloperEmail"];
         if (!string.IsNullOrWhiteSpace(developerMail))
         {
-            try { await SendEmail(developerMail, "InventarioWeb: solicitud de recuperación",
+            try { await SendEmail(developerMail, "OmniStock: solicitud de recuperación",
                 $"Solicitud #{request.Id} pendiente de revisión. Ingresa a Gestión Dev para aprobarla. No responda con contraseñas."); }
             catch { /* La solicitud persiste para revisión desde Gestión Dev; no divulgar SMTP al solicitante. */ }
         }
@@ -105,7 +105,7 @@ public sealed class PasswordRecoveryController(AppDbContext db, IConfiguration c
         await db.SaveChangesAsync();
         try
         {
-            await SendEmail(target.Email, "Recuperación aprobada - InventarioWeb",
+            await SendEmail(target.Email, "Recuperación aprobada - OmniStock",
                 $"Se aprobó tu solicitud. En los próximos 30 minutos, establece tu propia contraseña mediante este enlace de un solo uso:\n{link}\nSi no lo solicitaste, comunícate con el administrador.");
         }
         catch
