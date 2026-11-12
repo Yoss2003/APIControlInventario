@@ -1,5 +1,7 @@
 using InventoryAPI.Models;
 using InventoryAPI.Models.DTO;
+using System.Security.Cryptography;
+using System.Text;
 using InventoryAPI.Data;
 using InventoryAPI.Security;
 using Microsoft.EntityFrameworkCore;
@@ -129,7 +131,38 @@ namespace InventoryAPI.Controllers
                 if (result.AccountPending) return Unauthorized(new { accountPending = true, mensaje = result.Message });
                 return Unauthorized(new { mensaje = result.Message });
             }
-            if (result.RequirePasswordChange) return Ok(new { requirePasswordChange = true });
+            if (result.RequirePasswordChange)
+            {
+                // La clave temporal ya fue comprobada por LoginAsync, pero no se emite JWT
+                // hasta que el usuario la sustituya. El token corto no es autenticación general.
+                var target = result.User!;
+                var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+                var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+                var earlier = await db.PasswordRecoveryRequests
+                    .Where(r => r.UserId == target.Id && r.CompanyId == request.CompanyId &&
+                                r.CompletedAt == null && !r.Rejected)
+                    .ToListAsync();
+                foreach (var item in earlier)
+                {
+                    item.Rejected = true;
+                    item.TokenHash = null;
+                }
+                db.PasswordRecoveryRequests.Add(new PasswordRecoveryRequest
+                {
+                    CompanyId = request.CompanyId,
+                    UserId = target.Id,
+                    TokenHash = hash,
+                    RequestedAt = DateTime.UtcNow,
+                    ApprovedAt = DateTime.UtcNow,
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(15)
+                });
+                await db.SaveChangesAsync();
+                return Ok(new {
+                    requirePasswordChange = true,
+                    passwordResetToken = token,
+                    expiresInMinutes = 15
+                });
+            }
             var u = result.User!;
             return Ok(new { u.Id, u.Username, u.Email, u.RoleId, companyId = request.CompanyId, u.Token });
         }
