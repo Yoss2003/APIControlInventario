@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Mail;
+using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using InventoryAPI.Data;
 using Microsoft.EntityFrameworkCore;
@@ -85,8 +87,44 @@ public sealed class UserCredentialMailer(AppDbContext db, IConfiguration config,
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Fallo al enviar correo de alta del usuario en empresa {CompanyId}", companyId);
-            return (false, "El usuario se creó, pero el correo no pudo enviarse. Verifica SMTP y usa Reenviar credenciales.");
+            // La causa detallada solo se registra en el servidor. Nunca enviar
+            // nombres de usuario SMTP, contraseñas ni respuestas sin filtrar.
+            logger.LogWarning(ex,
+                "Fallo al enviar credenciales por SMTP en empresa {CompanyId} (tipo {ErrorType})",
+                companyId, ex.GetType().Name);
+            return (false, DescribeSmtpFailure(ex));
         }
+    }
+
+    private static string DescribeSmtpFailure(Exception error)
+    {
+        const string retry = " El usuario y su inventario sí se guardaron. Corrige SMTP y usa Reenviar credenciales.";
+        if (error is SmtpFailedRecipientException)
+            return "El servidor de correo rechazó al destinatario. Revisa que el correo sea correcto." + retry;
+
+        if (error is SmtpException smtp)
+        {
+            var raw = smtp.Message ?? string.Empty;
+            if (raw.Contains("5.7.8", StringComparison.OrdinalIgnoreCase) ||
+                raw.Contains("5.7.9", StringComparison.OrdinalIgnoreCase) ||
+                raw.Contains("authentication", StringComparison.OrdinalIgnoreCase) ||
+                raw.Contains("credentials", StringComparison.OrdinalIgnoreCase))
+                return "SMTP rechazó la autenticación. Verifica el remitente y la contraseña de aplicación." + retry;
+
+            if (smtp.StatusCode is SmtpStatusCode.MustIssueStartTlsFirst)
+                return "El servidor requiere TLS/STARTTLS. Revisa el host, puerto y seguridad SMTP." + retry;
+
+            if (smtp.InnerException is SocketException or AuthenticationException ||
+                smtp.StatusCode is SmtpStatusCode.ServiceNotAvailable)
+                return "No se pudo conectar de forma segura al servidor SMTP. Revisa red, host y puerto." + retry;
+
+            return "SMTP no confirmó el envío. Verifica el remitente, las credenciales y la configuración de correo." + retry;
+        }
+
+        if (error is SocketException or AuthenticationException)
+            return "No se pudo establecer una conexión segura con SMTP. Revisa host, puerto y red." + retry;
+
+        return "No se confirmó el envío del correo por SMTP. Revisa los registros de la API." + retry;
+
     }
 }
