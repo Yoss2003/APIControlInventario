@@ -294,17 +294,11 @@ namespace InventoryAPI.Controllers
             }
         }
 
+        // Ruta heredada: generaba claves débiles de 8 caracteres y enviaba correo
+        // sin esperar confirmación. Usar reemisión segura desde Gestión de usuarios.
         [HttpPost("{id}/resend-welcome")]
-        public async Task<IActionResult> ResendWelcomeEmail(int id)
-        {
-            if (!await access.HasAsync(User, InventoryPermissionCodes.ManageUsers) ||
-                !await CanManageTargetAsync(id)) return Forbid();
-            var (Success, Message) = await _userService.ResendWelcomeEmailAsync(id);
-
-            if (!Success) return BadRequest(new { mensaje = Message });
-
-            return Ok(new { mensaje = Message });
-        }
+        public IActionResult LegacyWelcomeDisabled(int id) => StatusCode(410,
+            new { error = "Utiliza POST /api/UserManagement/users/{id}/resend-credentials con permisos de gestión." });
 
         private async Task<bool> CanManageTargetAsync(int id)
         {
