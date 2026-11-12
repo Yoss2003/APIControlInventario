@@ -321,7 +321,7 @@ namespace InventoryAPI.Services
             var secret = Base32Encoding.ToString(key);
             user.TwoFactorSecret = secret;
             await _workFlow.CompleteAsync();
-            var qrUri = $"otpauth://totp/ControlInventario:{user.Username}?secret={secret}&issuer=ControlInventarioCorp";
+            var qrUri = $"otpauth://totp/OmniStock:{user.Username}?secret={secret}&issuer=OmniStock";
             return (true, secret, qrUri);
         }
 
@@ -386,7 +386,7 @@ namespace InventoryAPI.Services
                 };
                 var mailMessage = new MailMessage
                 {
-                    From = new MailAddress(email, "Control Inventario - Test"),
+                    From = new MailAddress(email, "OmniStock - Pruebas"),
                     Subject = "✅ Prueba de Conexión Exitosa",
                     Body = "<div style='font-family: Arial; padding: 20px; border: 1px solid #ddd; border-radius: 10px; text-align: center;'><h2 style='color: #2ECC71;'>¡Conexión Exitosa!</h2><p>El sistema tiene acceso para enviar alertas.</p></div>",
                     IsBodyHtml = true,
@@ -438,12 +438,12 @@ namespace InventoryAPI.Services
                     </div>
             
                     <hr style='border: none; border-top: 1px solid #eee; margin: 30px 0;' />
-                    <p style='font-size: 12px; color: #999; text-align: center;'>Este es un mensaje automático del Sistema de Control de Inventario. Por favor no responder a este correo.</p>
+                    <p style='font-size: 12px; color: #999; text-align: center;'>Este es un mensaje automático del OmniStock. Por favor no responder a este correo.</p>
                 </div>";
 
                 var mailMessage = new MailMessage
                 {
-                    From = new MailAddress(remitente, "Control Inventario - Seguridad"),
+                    From = new MailAddress(remitente, "OmniStock - Seguridad"),
                     Subject = "URGENTE: Validación de nuevo empleado requerida",
                     Body = htmlBody,
                     IsBodyHtml = true,
@@ -503,7 +503,7 @@ namespace InventoryAPI.Services
 
                 var mailMessage = new MailMessage
                 {
-                    From = new MailAddress(remitente, "Control Inventario - Recursos Humanos"),
+                    From = new MailAddress(remitente, "OmniStock - Recursos Humanos"),
                     Subject = "Bienvenido - Tus credenciales de acceso",
                     Body = htmlBody,
                     IsBodyHtml = true,
@@ -531,7 +531,7 @@ namespace InventoryAPI.Services
                 string htmlBody = $@"<div style='font-family: Arial, sans-serif; max-width: 600px; margin: auto; border: 1px solid #ddd; padding: 20px; border-radius: 10px; text-align: center;'><h2 style='color: #2ECC71;'>¡Tu cuenta ha sido activada! 🎉</h2><p>Hola <b>{user.Employee?.FirstName}</b>, Gerencia ha aprobado tu perfil.</p></div>";
                 var mailMessage = new MailMessage
                 {
-                    From = new MailAddress(remitente, "Control Inventario - RRHH"),
+                    From = new MailAddress(remitente, "OmniStock - RRHH"),
                     Subject = "¡Cuenta Activada! Ya puedes ingresar",
                     Body = htmlBody,
                     IsBodyHtml = true,
