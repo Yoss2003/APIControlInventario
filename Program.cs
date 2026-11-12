@@ -85,6 +85,7 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ICompanyLicenseService, CompanyLicenseService>();
 builder.Services.AddScoped<InventoryAccessPolicy>();
 builder.Services.AddScoped<ManagedUserRegistration>();
+builder.Services.AddScoped<UserCredentialMailer>();
 
 builder.Services.AddScoped<IRolePermissionService, RolePermissionService>();
 builder.Services.AddScoped<ICategoryMeasurementUnitService, CategoryMeasurementUnitService>();
@@ -214,6 +215,8 @@ using (var scope = app.Services.CreateScope())
 
         // Idempotente: aprovisiona el maestro y el inventario personal
         // para empresas/usuarios anteriores a la Fase 3.5 (incluido YosMG).
+        // Restauraciones antiguas pueden tener secuencias de usuarios/empleados/inventarios atrasadas.
+        IdentitySequenceRepair.Synchronize(context);
         InventoryProvisioner.EnsureExistingAsync(context).GetAwaiter().GetResult();
 
         // Catálogo de permisos compatible con registros existentes; no se alteran
@@ -247,12 +250,29 @@ using (var scope = app.Services.CreateScope())
             var registeredCodes = context.Permissions
                 .Select(x => x.SystemCode)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var initialViewUsersSeed = !registeredCodes.Contains(InventoryPermissionCodes.ViewUsers);
             foreach (var (code, label) in InventoryPermissionCodes.Definitions)
             {
                 if (registeredCodes.Add(code))
                     context.Permissions.Add(new Permission { SystemCode = code, Name = label });
             }
             context.SaveChanges();
+            // La primera vez que se añade VIEW_USERS, los administradores conservan
+            // la capacidad de ver/editar personal. Luego el desarrollador puede
+            // revocar cualquiera de estas capacidades desde su editor de roles.
+            if (initialViewUsersSeed && context.Roles.Any(r => r.Id == 2))
+            {
+                var codes = new[] { InventoryPermissionCodes.ViewUsers,
+                                    InventoryPermissionCodes.ManageUsers };
+                var ids = context.Permissions.Where(p => codes.Contains(p.SystemCode))
+                    .Select(p => p.Id).ToList();
+                var existingIds = context.RolePermissions.Where(p => p.RoleId == 2)
+                    .Select(p => p.PermissionId).ToHashSet();
+                foreach (var id in ids)
+                    if (!existingIds.Contains(id))
+                        context.RolePermissions.Add(new RolePermission { RoleId = 2, PermissionId = id });
+                context.SaveChanges();
+            }
             permissionsTx.Commit();
         }
     }

@@ -27,7 +27,9 @@ public sealed class InventoryAccessPolicy(AppDbContext db)
     public async Task<bool> HasAsync(ClaimsPrincipal principal, string code)
     {
         var role = RoleId(principal);
-        if (role is 1 or 2) return true;
+        if (role == 1) return true;
+        if (role == 2 && code != InventoryPermissionCodes.ViewUsers &&
+            code != InventoryPermissionCodes.ManageUsers) return true;
         if (role <= 0 || CompanyId(principal) <= 0) return false;
         return await db.RolePermissions.AsNoTracking().AnyAsync(p =>
             p.RoleId == role && p.Permission != null &&
@@ -52,7 +54,20 @@ public sealed class InventoryAccessPolicy(AppDbContext db)
     public async Task<string[]> GrantedAsync(ClaimsPrincipal principal)
     {
         var role = RoleId(principal);
-        if (role is 1 or 2) return InventoryPermissionCodes.Definitions.Keys.ToArray();
+        if (role == 1) return InventoryPermissionCodes.Definitions.Keys.ToArray();
+        if (role == 2)
+        {
+            var baseline = InventoryPermissionCodes.Definitions.Keys
+                .Where(code => code != InventoryPermissionCodes.ViewUsers &&
+                    code != InventoryPermissionCodes.ManageUsers).ToList();
+            var allowed = await db.RolePermissions.AsNoTracking()
+                .Where(p => p.RoleId == 2 && p.Permission != null &&
+                    (p.Permission.SystemCode == InventoryPermissionCodes.ViewUsers ||
+                     p.Permission.SystemCode == InventoryPermissionCodes.ManageUsers))
+                .Select(p => p.Permission!.SystemCode).Distinct().ToListAsync();
+            baseline.AddRange(allowed);
+            return baseline.ToArray();
+        }
         if (role <= 0) return [];
         return await db.RolePermissions.AsNoTracking()
             .Where(p => p.RoleId == role && p.Permission != null)

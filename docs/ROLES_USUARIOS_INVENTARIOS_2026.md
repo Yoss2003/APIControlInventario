@@ -84,3 +84,31 @@ La respuesta contiene `personalInventoryId`. **No** devuelve el hash ni la contr
 - El alta vieja `POST /api/Users` se conserva por compatibilidad, con autorización y bloqueo de roles 1/2; para nuevas altas Angular usa el flujo administrado, sin correos con contraseña.
 - `GET /api/Users/ApproveAccount/{id}` público queda desactivado (410). Se requiere aprobación autenticada por `POST` para altas antiguas pendientes. No reutilizar los enlaces antiguos.
 - Rol y usuario existentes no se eliminan, no se reasignan automáticamente a otra empresa y no se crean maestros duplicados.
+
+
+## Ajustes del registro web (noviembre 2026)
+
+- **Inventarios maestros globales:** `GET /api/Inventories/masters` y `GET /api/Inventories/masters/{id}/catalogs` exclusivos del desarrollador. El administrador conserva su maestro empresarial mediante el contexto de inventarios, sin catálogo global.
+- **Ver y editar usuarios:** solo roles de desarrollador o administrador. `VIEW_USERS` habilita lectura de listado/roles/flags; `MANAGE_USERS` habilita creación y edición. Se concede inicialmente ambos al administrador, pero el desarrollador puede cambiarlos mediante la configuración del rol 2. El rol desarrollador (1) permanece inalterable.
+- **Alta de usuarios:** la API genera nombres según MAUI: tres letras del primer nombre, primera mayúscula y resto minúscula, más iniciales de apellidos en mayúsculas. Si ya existe, añade un sufijo numérico. No confía en el username enviado por el navegador.
+- **Contraseña temporal:** la API genera aleatoriamente una clave de 128 bits y la almacena solo con hash PBKDF2. La envía mediante SMTP configurado (configuración de PasswordRecovery o perfil SMTP empresarial). La clave **nunca se devuelve a Angular**. El usuario cambia obligatoriamente su contraseña al primer ingreso.
+- **Primer login:** `POST /api/Users/Login` verifica la clave temporal y entrega un `passwordResetToken` de un solo uso y 15 minutos, *no* un JWT normal. Angular solicita nueva contraseña y llama a `POST /api/password-recovery/complete`, que revoca el desafío y habilita el inicio de sesión normal.
+- **Reenvío:** `POST /api/UserManagement/users/{id}/resend-credentials`, autorizado por empresa, permite corregir el correo y rotar la clave temporal, invalidando la anterior. La ruta anterior `POST /api/Users/{id}/resend-welcome` (credenciales débiles) devuelve 410.
+- **SMTP:** si no hay configuración, la creación se rechaza antes de persistir. Si hay configuración pero el envío falla después de guardar, la cuenta y el inventario permanecen y la respuesta incluye `emailSent=false`. El administrador deberá corregir la dirección o SMTP y usar Reenviar.
+- **Base heredada:** antes de aprovisionar usuarios, sincronizar secuencias de Users, Employees, Inventories, RolePermissions y PasswordRecoveryRequests; no borrar datos.
+- **RENIEC:** Angular consulta DNI mediante `GET /api/Customers/dni/{dni}`; si la API externa no responde, nombre y apellidos se pueden introducir manualmente.
+
+### Pruebas finales (entorno local)
+
+1. Configurar SMTP y confirmar que puede enviar. No registrar usuarios con un correo real equivocado.
+2. Como desarrollador, comprobar el listado global de inventarios maestros y que otros roles reciben 403 al llamar esos endpoints.
+3. Desde Gestión Dev, registrar el primer administrador de empresa 7 con DNI opcional. Confirmar que `MAESTRO_EMPRESA_7` no se duplica.
+4. Confirmar el nuevo personal en PostgreSQL y que llegó el correo. Probar nombre autogenerado de usuario.
+5. Iniciar con usuario y contraseña temporal: debe aparecer cambio obligatorio. Tras cambiar, el token ya no se puede reutilizar y se permite login normal.
+6. Crear usuario trabajador con administrador autorizado; intentar registrar al rol 2 desde formulario normal: debe rechazarse.
+7. Corregir correo y reenviar: debe invalidar la clave previa.
+8. Revocar `MANAGE_USERS` al administrador y confirmar que solo ve, no edita. Revocar `VIEW_USERS` y confirmar que pierde también el acceso al módulo.
+9. Repetir con otra empresa para verificar que ninguna consulta/edición de usuarios atraviesa límites empresariales.
+10. Si un alta falla, revisar logs API con SQLSTATE y constraint, sin imprimir contraseñas.
+
+Las compilaciones de CI no sustituyen el ensayo con PostgreSQL ni un SMTP real.
