@@ -12,6 +12,9 @@ namespace InventoryAPI.Controllers;
 [Route("api/serial-units")]
 public sealed class SerialUnitsController(AppDbContext db) : ControllerBase
 {
+    private sealed record ExistingSerialAttributes(
+        string? Attr1, string? Attr2, string? Attr3,
+        string? Attr4, string? Attr5, string? Attr6);
     private bool Scope(out int companyId, out int userId)
     {
         userId = int.TryParse(User.FindFirst("UserId")?.Value, out var u) ? u : 0;
@@ -174,8 +177,11 @@ public sealed class SerialUnitsController(AppDbContext db) : ControllerBase
 
         var existingDetails = await db.Set<ArticleDetails>().AsNoTracking()
             .Where(d => d.ArticleId == articleId)
-            .Select(d => new { d.SerialNumber, d.Attr1, d.Attr2, d.Attr3, d.Attr4, d.Attr5, d.Attr6 })
-            .ToListAsync();
+            .Select(d => new
+            {
+                d.SerialNumber,
+                Attributes = new ExistingSerialAttributes(d.Attr1, d.Attr2, d.Attr3, d.Attr4, d.Attr5, d.Attr6)
+            }).ToListAsync();
         var existing = existingDetails.Select(d => d.SerialNumber)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var duplicate = normalized.FirstOrDefault(x => existing.Contains(x.SerialNumber));
@@ -183,7 +189,7 @@ public sealed class SerialUnitsController(AppDbContext db) : ControllerBase
             return Conflict(new { error = $"La serie «{duplicate.SerialNumber}» ya está registrada en este artículo." });
 
         var uniqueRules = new (string? Label, bool IsUnique, Func<RegisterUnitRequest, string?> GetValue,
-            Func<dynamic, string?> GetExisting)[]
+            Func<ExistingSerialAttributes, string?> GetExisting)[]
         {
             (category.Label1, category.IsUnique1, x => x.Attr1, x => x.Attr1),
             (category.Label2, category.IsUnique2, x => x.Attr2, x => x.Attr2),
@@ -202,7 +208,7 @@ public sealed class SerialUnitsController(AppDbContext db) : ControllerBase
             var normalizedValues = values.Select(x => x.ToUpperInvariant()).ToList();
             if (normalizedValues.Distinct(StringComparer.Ordinal).Count() != normalizedValues.Count)
                 return BadRequest(new { error = $"El atributo «{rule.Label}» debe ser diferente para cada unidad del lote." });
-            var previouslyUsed = existingDetails.Select(rule.GetExisting)
+            var previouslyUsed = existingDetails.Select(x => rule.GetExisting(x.Attributes))
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Select(x => x!.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var conflict = values.FirstOrDefault(previouslyUsed.Contains);
