@@ -88,4 +88,150 @@ public sealed class SerialUnitsController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync(); await tx.CommitAsync();
         return Ok(new { detail.Id, detail.SerialNumber });
     }
+
+    public sealed record RegisterUnitBatchRequest(List<RegisterUnitRequest> Units);
+
+    /// <summary>Registra varias unidades serializadas en una transacción y un movimiento de entrada.</summary>
+    [HttpPost("{articleId:int}/batch")]
+    public async Task<IActionResult> AddUnitsBatch(int articleId, [FromBody] RegisterUnitBatchRequest input)
+    {
+        if (!Scope(out var cid, out var uid)) return Unauthorized();
+        var units = input?.Units;
+        if (units is null || units.Count is < 1 or > 1000)
+            return BadRequest(new { error = "El lote debe contener entre 1 y 1000 unidades." });
+
+        var normalized = units.Select(x => new RegisterUnitRequest(
+            (x.SerialNumber ?? string.Empty).Trim(),
+            x.Attr1?.Trim(), x.Attr2?.Trim(), x.Attr3?.Trim(),
+            x.Attr4?.Trim(), x.Attr5?.Trim(), x.Attr6?.Trim())).ToList();
+
+        if (normalized.Any(x => string.IsNullOrWhiteSpace(x.SerialNumber) || x.SerialNumber.Length > 150))
+            return BadRequest(new { error = "Todas las unidades necesitan una serie válida de hasta 150 caracteres." });
+
+        var submitted = normalized.Select(x => x.SerialNumber).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (submitted.Count != normalized.Count)
+            return BadRequest(new { error = "El lote contiene números de serie duplicados." });
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var article = await db.Articles.FromSqlInterpolated(
+            $"SELECT * FROM \"Articles\" WHERE \"Id\" = {articleId} AND \"CompanyId\" = {cid} FOR UPDATE")
+            .SingleOrDefaultAsync();
+        if (article is null || !article.IsActive) return NotFound();
+        if (!await Accessible(cid, uid, true).ContainsAsync(article.InventoryId)) return Forbid();
+        if (article.Tracking.ToString() != "Serialized")
+            return BadRequest(new { error = "Solo se permiten lotes para artículos serializados." });
+
+        var existingSerials = await db.Set<ArticleDetails>().AsNoTracking()
+            .Where(d => d.ArticleId == articleId)
+            .Select(d => d.SerialNumber).ToListAsync();
+        var existing = existingSerials.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var duplicate = normalized.FirstOrDefault(x => existing.Contains(x.SerialNumber));
+        if (duplicate is not null)
+            return Conflict(new { error = $"La serie «{duplicate.SerialNumber}» ya está registrada en este artículo." });
+
+        var now = DateTime.UtcNow;
+        var details = normalized.Select(x => new ArticleDetails
+        {
+            ArticleId = articleId,
+            SerialNumber = x.SerialNumber,
+            Attr1 = x.Attr1, Attr2 = x.Attr2, Attr3 = x.Attr3,
+            Attr4 = x.Attr4, Attr5 = x.Attr5, Attr6 = x.Attr6,
+            StatusId = article.StatusId,
+            RegistrationDate = now,
+            IsActive = true
+        }).ToList();
+
+        db.Set<ArticleDetails>().AddRange(details);
+        article.Stock += details.Count;
+        article.ModificationDate = now;
+
+        var employeeId = int.TryParse(User.FindFirst("EmployeeId")?.Value, out var employee) && employee > 0
+            ? employee : (int?)null;
+        var username = User.Identity?.Name ?? User.FindFirst("Username")?.Value ?? "Usuario";
+        db.Movements.Add(new Movement
+        {
+            ArticleId = articleId, EmployeeId = employeeId, CompanyId = cid,
+            ActionId = 1, Amount = details.Count, MovementDate = now,
+            SalePrice = 0, PaymentMethod = "N/A", Recipient = "Almacén Local",
+            Observation = $"Ingreso en lote de {details.Count} unidades serializadas por {username}."
+        });
+        db.HistoryLogs.Add(new HistoryLog
+        {
+            LogDate = now, Username = username, ModuleName = "Inventario",
+            ActionName = "Ingreso de series",
+            Detail = $"Se registraron {details.Count} unidades serializadas del artículo «{article.Name}».",
+            CompanyId = cid
+        });
+
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+        return Ok(new
+        {
+            added = details.Count,
+            stock = article.Stock,
+            units = details.Select(x => new { x.Id, x.SerialNumber })
+        });
+    }
+
+    public sealed record DecommissionUnitRequest([Required] int DetailId, [Required] string Observation);
+
+    /// <summary>
+    /// Da de baja una unidad serializada conservando su detalle y su historial.
+    /// Una unidad con venta o asignación vigente no puede retirarse.
+    /// </summary>
+    [HttpPost("{articleId:int}/decommission")]
+    public async Task<IActionResult> DecommissionUnit(int articleId, [FromBody] DecommissionUnitRequest input)
+    {
+        if (!Scope(out var cid, out var uid)) return Unauthorized();
+        var reason = input?.Observation?.Trim() ?? string.Empty;
+        if (input is null || input.DetailId <= 0 || reason.Length is < 5 or > 500)
+            return BadRequest(new { error = "Indica la unidad y un motivo de baja de entre 5 y 500 caracteres." });
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var article = await db.Articles.FromSqlInterpolated(
+            $"SELECT * FROM \"Articles\" WHERE \"Id\" = {articleId} AND \"CompanyId\" = {cid} FOR UPDATE")
+            .SingleOrDefaultAsync();
+        if (article is null) return NotFound();
+        if (!await Accessible(cid, uid, true).ContainsAsync(article.InventoryId)) return Forbid();
+        if (!article.IsActive || article.Tracking.ToString() != "Serialized")
+            return Conflict(new { error = "El artículo debe estar activo y ser serializado." });
+
+        var detail = await db.Set<ArticleDetails>().FirstOrDefaultAsync(d =>
+            d.Id == input.DetailId && d.ArticleId == articleId);
+        if (detail is null) return NotFound(new { error = "La unidad no pertenece a este artículo." });
+        if (!detail.IsActive) return Conflict(new { error = "La unidad ya fue retirada." });
+        if (await db.ArticleUnitOperations.AnyAsync(op =>
+            op.ArticleDetailId == detail.Id && op.CompanyId == cid && !op.IsReversed))
+            return Conflict(new { error = "La unidad tiene una venta o asignación vigente. Cierra o revierte esa operación antes de darla de baja." });
+        if (article.Stock < 1)
+            return Conflict(new { error = "El stock del artículo no permite retirar otra unidad." });
+
+        var now = DateTime.UtcNow;
+        var employeeId = int.TryParse(User.FindFirst("EmployeeId")?.Value, out var employee) && employee > 0
+            ? employee : (int?)null;
+        var username = User.Identity?.Name ?? User.FindFirst("Username")?.Value ?? "Usuario";
+
+        // No se elimina ArticleDetails: la serie permanece consultable como retirada.
+        detail.IsActive = false;
+        article.Stock -= 1;
+        article.ModificationDate = now;
+        db.Movements.Add(new Movement
+        {
+            ArticleId = articleId, EmployeeId = employeeId, CompanyId = cid,
+            ActionId = 2, Amount = 1, MovementDate = now,
+            SalePrice = 0, PaymentMethod = "N/A", Recipient = "Baja definitiva",
+            Observation = $"Baja definitiva de serie {detail.SerialNumber}. Motivo: {reason}"
+        });
+        db.HistoryLogs.Add(new HistoryLog
+        {
+            LogDate = now, Username = username, ModuleName = "Inventario",
+            ActionName = "Baja de unidad serializada",
+            Detail = $"Serie «{detail.SerialNumber}» del artículo «{article.Name}». Motivo: {reason}",
+            CompanyId = cid
+        });
+
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+        return Ok(new { detail.Id, detail.SerialNumber, detail.IsActive, stock = article.Stock });
+    }
 }
