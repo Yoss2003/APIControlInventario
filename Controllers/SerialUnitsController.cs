@@ -75,16 +75,63 @@ public sealed class SerialUnitsController(AppDbContext db) : ControllerBase
         if (!await Accessible(cid, uid, true).ContainsAsync(article.InventoryId)) return Forbid();
         if (article.Tracking.ToString() != "Serialized") return BadRequest(new { error = "Solo artículos serializados." });
         var serial = input.SerialNumber.Trim();
-        if (await db.Set<ArticleDetails>().AnyAsync(d => d.ArticleId == articleId && d.SerialNumber == serial))
+        if (await db.Set<ArticleDetails>().AnyAsync(d => d.ArticleId == articleId &&
+            d.SerialNumber.ToUpper() == serial.ToUpper()))
             return Conflict(new { error = "Serie repetida en este artículo." });
+
+        var category = await db.Categories.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == article.CategoryId && c.CompanyId == cid && c.IsActive);
+        if (category is null) return Conflict(new { error = "La categoría del artículo ya no está disponible." });
+        var uniqueRules = new (string? Label, bool IsUnique, string? Value)[]
+        {
+            (category.Label1, category.IsUnique1, input.Attr1),
+            (category.Label2, category.IsUnique2, input.Attr2),
+            (category.Label3, category.IsUnique3, input.Attr3),
+            (category.Label4, category.IsUnique4, input.Attr4),
+            (category.Label5, category.IsUnique5, input.Attr5),
+            (category.Label6, category.IsUnique6, input.Attr6)
+        };
+        var existingAttributes = await db.Set<ArticleDetails>().AsNoTracking()
+            .Where(d => d.ArticleId == articleId)
+            .Select(d => new { d.Attr1, d.Attr2, d.Attr3, d.Attr4, d.Attr5, d.Attr6 })
+            .ToListAsync();
+        for (var index = 0; index < uniqueRules.Length; index++)
+        {
+            var rule = uniqueRules[index];
+            if (!rule.IsUnique || string.IsNullOrWhiteSpace(rule.Label)) continue;
+            if (string.IsNullOrWhiteSpace(rule.Value))
+                return BadRequest(new { error = $"El atributo «{rule.Label}» es obligatorio para esta unidad." });
+            var value = rule.Value.Trim();
+            var alreadyUsed = existingAttributes.Any(row =>
+            {
+                var previous = index switch
+                {
+                    0 => row.Attr1, 1 => row.Attr2, 2 => row.Attr3,
+                    3 => row.Attr4, 4 => row.Attr5, _ => row.Attr6
+                };
+                return string.Equals(previous?.Trim(), value, StringComparison.OrdinalIgnoreCase);
+            });
+            if (alreadyUsed)
+                return Conflict(new { error = $"El atributo «{rule.Label}» ya está utilizado en otra unidad." });
+        }
+
+        var now = DateTime.UtcNow;
         var detail = new ArticleDetails { ArticleId = articleId, SerialNumber = serial,
-            Attr1 = input.Attr1, Attr2 = input.Attr2, Attr3 = input.Attr3,
-            Attr4 = input.Attr4, Attr5 = input.Attr5, Attr6 = input.Attr6,
-            RegistrationDate = DateTime.UtcNow, IsActive = true };
+            Attr1 = input.Attr1?.Trim(), Attr2 = input.Attr2?.Trim(), Attr3 = input.Attr3?.Trim(),
+            Attr4 = input.Attr4?.Trim(), Attr5 = input.Attr5?.Trim(), Attr6 = input.Attr6?.Trim(),
+            StatusId = article.StatusId, RegistrationDate = now, IsActive = true };
         db.Set<ArticleDetails>().Add(detail);
-        article.Stock += 1; article.ModificationDate = DateTime.UtcNow;
+        article.Stock += 1; article.ModificationDate = now;
+        var username = User.Identity?.Name ?? User.FindFirst("Username")?.Value ?? "Usuario";
         db.Movements.Add(new Movement { ArticleId = articleId, CompanyId = cid, ActionId = 1,
-            Amount = 1, MovementDate = DateTime.UtcNow, Observation = "Ingreso de unidad serializada: " + serial });
+            Amount = 1, MovementDate = now, Observation = "Ingreso de unidad serializada: " + serial });
+        db.HistoryLogs.Add(new HistoryLog
+        {
+            LogDate = now, Username = username, ModuleName = "Inventario",
+            ActionName = "Ingreso de serie",
+            Detail = $"Se registró la serie «{serial}» del artículo «{article.Name}».",
+            CompanyId = cid
+        });
         await db.SaveChangesAsync(); await tx.CommitAsync();
         return Ok(new { detail.Id, detail.SerialNumber });
     }
@@ -121,13 +168,47 @@ public sealed class SerialUnitsController(AppDbContext db) : ControllerBase
         if (article.Tracking.ToString() != "Serialized")
             return BadRequest(new { error = "Solo se permiten lotes para artículos serializados." });
 
-        var existingSerials = await db.Set<ArticleDetails>().AsNoTracking()
+        var category = await db.Categories.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == article.CategoryId && c.CompanyId == cid && c.IsActive);
+        if (category is null) return Conflict(new { error = "La categoría del artículo ya no está disponible." });
+
+        var existingDetails = await db.Set<ArticleDetails>().AsNoTracking()
             .Where(d => d.ArticleId == articleId)
-            .Select(d => d.SerialNumber).ToListAsync();
-        var existing = existingSerials.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .Select(d => new { d.SerialNumber, d.Attr1, d.Attr2, d.Attr3, d.Attr4, d.Attr5, d.Attr6 })
+            .ToListAsync();
+        var existing = existingDetails.Select(d => d.SerialNumber)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var duplicate = normalized.FirstOrDefault(x => existing.Contains(x.SerialNumber));
         if (duplicate is not null)
             return Conflict(new { error = $"La serie «{duplicate.SerialNumber}» ya está registrada en este artículo." });
+
+        var uniqueRules = new (string? Label, bool IsUnique, Func<RegisterUnitRequest, string?> GetValue,
+            Func<dynamic, string?> GetExisting)[]
+        {
+            (category.Label1, category.IsUnique1, x => x.Attr1, x => x.Attr1),
+            (category.Label2, category.IsUnique2, x => x.Attr2, x => x.Attr2),
+            (category.Label3, category.IsUnique3, x => x.Attr3, x => x.Attr3),
+            (category.Label4, category.IsUnique4, x => x.Attr4, x => x.Attr4),
+            (category.Label5, category.IsUnique5, x => x.Attr5, x => x.Attr5),
+            (category.Label6, category.IsUnique6, x => x.Attr6, x => x.Attr6)
+        };
+        foreach (var rule in uniqueRules)
+        {
+            if (!rule.IsUnique || string.IsNullOrWhiteSpace(rule.Label)) continue;
+            var values = normalized.Select(rule.GetValue)
+                .Select(x => x?.Trim() ?? string.Empty).ToList();
+            if (values.Any(string.IsNullOrWhiteSpace))
+                return BadRequest(new { error = $"Todas las unidades necesitan completar el atributo «{rule.Label}»." });
+            var normalizedValues = values.Select(x => x.ToUpperInvariant()).ToList();
+            if (normalizedValues.Distinct(StringComparer.Ordinal).Count() != normalizedValues.Count)
+                return BadRequest(new { error = $"El atributo «{rule.Label}» debe ser diferente para cada unidad del lote." });
+            var previouslyUsed = existingDetails.Select(rule.GetExisting)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x!.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var conflict = values.FirstOrDefault(previouslyUsed.Contains);
+            if (conflict is not null)
+                return Conflict(new { error = $"El atributo «{rule.Label}» con valor «{conflict}» ya está utilizado en otra unidad." });
+        }
 
         var now = DateTime.UtcNow;
         var details = normalized.Select(x => new ArticleDetails
