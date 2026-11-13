@@ -51,6 +51,27 @@ public class ArticlesController(IArticleService articleService, AppDbContext db)
             return "La categoría no pertenece al catálogo de esta empresa o está inactiva.";
         if (article.BrandId.HasValue && !await _db.Brands.AnyAsync(b => b.Id == article.BrandId && b.CompanyId == companyId && b.CategoryId == article.CategoryId && b.IsActive))
             return "La marca no pertenece a esta categoría.";
+        if (article.SupplierId.HasValue && !await _db.Suppliers.AnyAsync(s =>
+            s.Id == article.SupplierId && s.CompanyId == companyId && s.IsActive))
+            return "El proveedor no pertenece a esta empresa o está inactivo.";
+
+        async Task<bool> IsCompanyParameter(int? parameterId, string parameterType)
+        {
+            if (!parameterId.HasValue) return true;
+            return await _db.Parameters.AnyAsync(p =>
+                p.Id == parameterId && p.CompanyId == companyId &&
+                p.ParameterType.ToUpper() == parameterType.ToUpper() &&
+                (p.InventoryId == 0 || _db.Inventories.Any(i =>
+                    i.Id == p.InventoryId && i.CompanyId == companyId && i.IsMaster)));
+        }
+
+        if (!await IsCompanyParameter(article.StatusId, "Estado"))
+            return "El estado seleccionado no pertenece a los parámetros de esta empresa.";
+        if (!await IsCompanyParameter(article.ConditionId, "Condicion"))
+            return "La condición seleccionada no pertenece a los parámetros de esta empresa.";
+        if (!await IsCompanyParameter(article.LocationId, "Ubicacion"))
+            return "La ubicación seleccionada no pertenece a los parámetros de esta empresa.";
+
         if (string.IsNullOrWhiteSpace(article.Code) || string.IsNullOrWhiteSpace(article.Name))
             return "Código y nombre del artículo son obligatorios.";
         if (article.Stock < 0) return "El stock no puede ser negativo.";
@@ -129,6 +150,14 @@ public class ArticlesController(IArticleService articleService, AppDbContext db)
         current.AcquisitionPrice = update.AcquisitionPrice;
         current.AcquisitionCurrency = update.AcquisitionCurrency;
         current.SalePrice = update.SalePrice; current.SaleCurrency = update.SaleCurrency;
+        current.SupplierId = update.SupplierId;
+        current.StatusId = update.StatusId;
+        current.ConditionId = update.ConditionId;
+        current.LocationId = update.LocationId;
+        current.AcquisitionDate = update.AcquisitionDate;
+        current.UsefulLifeMonths = update.UsefulLifeMonths;
+        current.WarrantyEndDate = update.WarrantyEndDate;
+        current.Observation = update.Observation;
         current.Characteristics = update.Characteristics;
         current.Stock = update.Stock;
         current.ModificationDate = DateTime.UtcNow;

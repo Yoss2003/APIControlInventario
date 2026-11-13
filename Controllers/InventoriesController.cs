@@ -264,6 +264,29 @@ public sealed class InventoriesController(
             username = x.User?.Username, x.AccessLevel, x.SharedDate }));
     }
 
+    public sealed record UpdateSharedAccessRequest(int AccessLevel);
+
+    /// <summary>Actualiza el nivel de acceso sin revocar y recrear la invitación.</summary>
+    [HttpPut("Share/{sharedInventoryId:int}/Access")]
+    public async Task<IActionResult> UpdateShareAccess(int sharedInventoryId, [FromBody] UpdateSharedAccessRequest request)
+    {
+        if (!TryScope(out var company, out var user)) return Unauthorized();
+        if (!await permissions.HasAsync(User, InventoryPermissionCodes.ManageInventoryAccess)) return Forbid();
+        if (request.AccessLevel is not (1 or 2))
+            return BadRequest(new { error = "El permiso debe ser 1 (Lector) o 2 (Editor)." });
+
+        var manager = IsDeveloper || IsAdmin;
+        var share = await _db.SharedInventories.FirstOrDefaultAsync(s =>
+            s.Id == sharedInventoryId && s.CompanyId == company &&
+            _db.Inventories.Any(i => i.Id == s.InventoryId && i.CompanyId == company &&
+                i.IsActive && !i.IsMaster && (i.UserId == user || manager)));
+        if (share is null) return NotFound();
+
+        share.AccessLevel = (SharedInventory.AccessMode)request.AccessLevel;
+        await _db.SaveChangesAsync();
+        return Ok(new { share.Id, share.InventoryId, share.UserId, share.AccessLevel });
+    }
+
     [HttpDelete("Revoke/{sharedInventoryId:int}")]
     public async Task<IActionResult> RevokeAccess(int sharedInventoryId)
     {
